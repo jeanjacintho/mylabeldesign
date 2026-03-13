@@ -9,7 +9,10 @@ import {
   ImageIcon,
   Group,
   Circle,
+  Barcode,
 } from 'lucide-react'
+
+import type { ParsedLabelDocument } from '@openlabel/core'
 
 type LayerType = 'frame' | 'rectangle' | 'text' | 'image' | 'group' | 'ellipse'
 
@@ -29,25 +32,10 @@ const ICON_MAP: Record<LayerType, React.ReactNode> = {
   ellipse: <Circle size={13} className="text-[#b3b3b3]" />,
 }
 
-const INITIAL_LAYERS: Layer[] = [
-  {
-    id: 'frame-1',
-    name: 'Frame 1',
-    type: 'frame',
-    children: [
-      {
-        id: 'frame-2',
-        name: 'Frame 2',
-        type: 'frame',
-        children: [
-          { id: 'rect-1', name: 'Rectangle 1', type: 'rectangle' },
-          { id: 'rect-2', name: 'Rectangle 2', type: 'rectangle' },
-          { id: 'rect-3', name: 'Rectangle 3', type: 'rectangle' },
-        ],
-      },
-    ],
-  },
-]
+const PARSED_ICON_MAP = {
+  text: <Type size={13} className="text-[#b3b3b3]" />,
+  barcode: <Barcode size={13} className="text-[#b3b3b3]" />,
+}
 
 interface LayerRowProps {
   layer: Layer
@@ -116,12 +104,30 @@ function LayerRow({ layer, depth, selected, onSelect, expanded, onToggle }: Laye
   )
 }
 
-export function LayersPanel() {
+interface LayersPanelProps {
+  document: ParsedLabelDocument
+  selectedId: string | null
+  onSelect: (id: string) => void
+}
+
+export function LayersPanel({ document, selectedId, onSelect }: LayersPanelProps) {
   const [activeTab, setActiveTab] = useState<'layers' | 'assets'>('layers')
-  const [selected, setSelected] = useState<string | null>('frame-2')
   const [expanded, setExpanded] = useState<Set<string>>(
-    new Set(['frame-1', 'frame-2']),
+    new Set(['frame-1']),
   )
+
+  const parsedLayers: Layer[] = [
+    {
+      id: 'frame-1',
+      name: `Etiqueta (${document.canvas.widthMm} x ${document.canvas.heightMm} mm)`,
+      type: 'frame',
+      children: document.elements.map(element => ({
+        id: element.id,
+        name: element.content.slice(0, 36) || element.name,
+        type: element.kind === 'barcode' ? 'image' : 'text',
+      })),
+    },
+  ]
 
   function toggleExpand(id: string) {
     setExpanded(prev => {
@@ -172,21 +178,32 @@ export function LayersPanel() {
       <div className="flex-1 overflow-y-auto py-1">
         {activeTab === 'layers' ? (
           <div className="px-1">
-            {INITIAL_LAYERS.map(layer => (
+            {parsedLayers.map(layer => (
               <LayerRow
                 key={layer.id}
                 layer={layer}
                 depth={0}
-                selected={selected}
-                onSelect={setSelected}
+                selected={selectedId}
+                onSelect={onSelect}
                 expanded={expanded}
                 onToggle={toggleExpand}
               />
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center h-32 text-xs text-[#555]">
-            No assets yet
+          <div className="px-3 py-4 text-xs text-[#777]">
+            <div className="mb-2 rounded-md border border-[#3a3a3a] bg-[#252525] p-3">
+              <p className="mb-1 font-medium text-[#ccc]">Importacao PPLA</p>
+              <p>{document.elements.length} elementos convertidos para o preview.</p>
+            </div>
+            <div className="space-y-2">
+              {document.elements.slice(0, 6).map(element => (
+                <div key={element.id} className="flex items-center gap-2 rounded bg-[#252525] px-2 py-2">
+                  <span className="shrink-0">{PARSED_ICON_MAP[element.kind]}</span>
+                  <span className="truncate">{element.name}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

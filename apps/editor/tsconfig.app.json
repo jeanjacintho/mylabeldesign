@@ -25,8 +25,11 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@openlabel/core": ["../../packages/core/src/index.ts"],
+      "@openlabel/protocols": ["../../packages/protocols/src/index.ts"],
+      "@openlabel/store": ["../../packages/store/src/index.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "../../packages/core/src", "../../packages/protocols/src", "../../packages/store/src"]
 }

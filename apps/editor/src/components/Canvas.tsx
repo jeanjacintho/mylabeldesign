@@ -1,28 +1,23 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import { cn } from '@/lib/utils'
 
-interface LabelElement {
-  id: string
-  x: number
-  y: number
-  width: number
-  height: number
-  selected?: boolean
+import type { ParsedLabelDocument } from '@openlabel/core'
+
+interface CanvasProps {
+  document: ParsedLabelDocument
+  selectedId: string | null
+  onSelect: (id: string | null) => void
 }
 
-const INITIAL_ELEMENTS: LabelElement[] = [
-  { id: 'rect-1', x: 20, y: 50, width: 100, height: 100 },
-  { id: 'rect-2', x: 150, y: 50, width: 100, height: 100 },
-  { id: 'rect-3', x: 280, y: 50, width: 100, height: 100 },
-]
-
-const LABEL_WIDTH = 500
-const LABEL_HEIGHT = 200
-
-export function Canvas() {
+export function Canvas({ document, selectedId, onSelect }: CanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [zoom] = useState(1)
+  const previewScale = useMemo(() => {
+    const maxDimension = Math.max(document.canvas.widthDots, document.canvas.heightDots)
+    return maxDimension > 980 ? 0.48 : 0.64
+  }, [document.canvas.heightDots, document.canvas.widthDots])
+
+  const labelWidth = document.canvas.widthDots * previewScale
+  const labelHeight = document.canvas.heightDots * previewScale
 
   return (
     <div
@@ -33,7 +28,7 @@ export function Canvas() {
           'radial-gradient(circle, #3a3a3a 1px, transparent 1px)',
         backgroundSize: '24px 24px',
       }}
-      onClick={() => setSelectedId(null)}
+      onClick={() => onSelect(null)}
     >
       {/* Rulers - top */}
       <div className="absolute top-0 left-8 right-0 h-6 bg-[#252525] border-b border-[#3a3a3a] z-10 overflow-hidden">
@@ -107,55 +102,68 @@ export function Canvas() {
         className="absolute inset-0 flex items-center justify-center"
         style={{ top: '24px', left: '32px' }}
       >
-        <div
-          className="relative"
-          style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }}
-        >
+        <div className="relative">
           {/* Label canvas label */}
           <div className="absolute -top-6 left-0 text-xs text-[#666] whitespace-nowrap">
-            Frame 1
+            Etiqueta PPLA importada
           </div>
 
           {/* Label outer frame */}
           <div
-            className="relative bg-[#f5f5f5] shadow-2xl"
-            style={{ width: LABEL_WIDTH, height: LABEL_HEIGHT + 80 }}
+            className="relative bg-[#f7f7f7] shadow-2xl ring-1 ring-black/10"
+            style={{ width: labelWidth, height: labelHeight }}
           >
-            {/* "Frame 2" - inner frame with auto-layout */}
-            <div
-              className={cn(
-                'absolute border-2 bg-white/50',
-                selectedId === 'frame-2'
-                  ? 'border-[#1971c2]'
-                  : 'border-[#ff6b6b]',
-              )}
-              style={{ left: 8, top: 8, width: LABEL_WIDTH - 16, height: LABEL_HEIGHT }}
-              onClick={e => {
-                e.stopPropagation()
-                setSelectedId('frame-2')
-              }}
-            >
-              {/* "Hug x Hug" badge */}
-              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[#1971c2] text-white text-[10px] px-2 py-0.5 rounded whitespace-nowrap">
-                Hug × Hug
-              </div>
-
-              {/* Child rectangles */}
-              <div className="flex items-center gap-3 p-4 h-full">
-                {INITIAL_ELEMENTS.map(el => (
+            {document.elements.map(element => (
+              <div
+                key={element.id}
+                className={cn(
+                  'absolute transition-shadow',
+                  selectedId === element.id && 'shadow-[0_0_0_2px_#1971c2]',
+                )}
+                style={{
+                  left: element.xDots * previewScale,
+                  top: element.yDots * previewScale,
+                  width: element.widthDots * previewScale,
+                  minHeight: element.heightDots * previewScale,
+                }}
+                onClick={event => {
+                  event.stopPropagation()
+                  onSelect(element.id)
+                }}
+              >
+                {element.kind === 'text' ? (
                   <div
-                    key={el.id}
-                    className={cn(
-                      'flex-1 h-full bg-[#d4d4d4] border-2 border-transparent transition-colors rounded-sm cursor-pointer',
-                      selectedId === el.id && 'border-[#1971c2]',
-                    )}
-                    onClick={e => {
-                      e.stopPropagation()
-                      setSelectedId(el.id)
+                    className="rounded-sm border border-transparent px-1 py-0.5 font-mono text-[#171717]"
+                    style={{
+                      fontSize: Math.max(9, element.heightDots * previewScale * 0.55),
+                      lineHeight: 1.1,
+                      whiteSpace: 'nowrap',
+                      writingMode: 'horizontal-tb',
+                      transform: element.rotation ? `rotate(${element.rotation}deg)` : 'none',
+                      transformOrigin: 'left top',
                     }}
-                  />
-                ))}
+                  >
+                    {element.content}
+                  </div>
+                ) : (
+                  <div className="rounded-sm border border-[#222] bg-white p-1">
+                    <div
+                      className="h-full min-h-8 w-full"
+                      style={{
+                        backgroundImage:
+                          'repeating-linear-gradient(90deg, #111 0 2px, transparent 2px 4px, #111 4px 5px, transparent 5px 8px)',
+                      }}
+                    />
+                    <div className="mt-1 text-center text-[8px] font-semibold uppercase tracking-[0.15em] text-[#444]">
+                      Barcode
+                    </div>
+                  </div>
+                )}
               </div>
+            ))}
+
+            <div className="absolute -bottom-8 left-0 text-[11px] text-[#7a7a7a]">
+              {document.canvas.widthMm}mm x {document.canvas.heightMm}mm
             </div>
           </div>
         </div>

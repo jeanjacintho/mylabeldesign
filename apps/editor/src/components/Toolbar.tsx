@@ -8,6 +8,7 @@ import {
   Scale,
   Hand,
   MessageCircle,
+  Code2,
   Pipette,
   SunMoon,
   Share2,
@@ -17,6 +18,8 @@ import {
   Plus,
 } from 'lucide-react'
 import { useState } from 'react'
+
+import { Button } from '@/components/ui/button'
 
 interface ToolButtonProps {
   icon: React.ReactNode
@@ -53,7 +56,11 @@ type Tool =
   | 'hand'
   | 'comment'
 
-export function Toolbar() {
+interface ToolbarProps {
+  onOpenCode: () => void
+}
+
+export function Toolbar({ onOpenCode }: ToolbarProps) {
   const [activeTool, setActiveTool] = useState<Tool>('select')
   const [zoom, setZoom] = useState(26)
 
@@ -141,6 +148,11 @@ export function Toolbar() {
       {/* Right side controls */}
       <ToolButton icon={<Pipette size={16} />} label="Assets" />
       <ToolButton icon={<SunMoon size={16} />} label="Toggle theme" />
+
+      <Button type="button" variant="outline" size="sm" onClick={onOpenCode}>
+        <Code2 size={14} />
+        Code
+      </Button>
 
       <div className="w-px h-6 bg-[#3a3a3a] mx-1" />
 
