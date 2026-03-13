@@ -1,0 +1,41 @@
+M3000
+c0000
+e
+O0216
+f320
+DL
+L
+D11
+PF
+SF
+H10
+233200502300370PURA COR
+231100502200355BENEFICIAMENTO TEXTIL
+232100502300335LACRE:{{fluxo.fluxo.codigo}}
+212200502650318CRIACAO
+212200502700308{{substring dataOp 8 10}}/{{substring dataOp 5 7}}/{{substring dataOp 2 4}}
+212200501600318QUITACAO
+212200501600308{{#each operacoes}}{{#if @last}}{{#if dataFim}}{{substring dataFim 8 10}}/{{substring dataFim 5 7}}/{{substring dataFim 2 4}}{{/if}}{{/if}}{{/each}}
+212200500550318GPS
+212200500550308{{fluxo.fluxo.localizacao}}
+212200502700285CLIENTE
+212200502700272{{clientes.0.empresa.nomeFantasia}}
+212200502700250REF:{{fluxo.fluxo.referencia}}
+212200502700225ARTIGO
+212200502700213{{opItens.0.produto.descricao}}
+212200502700190TECIDO
+212200502700178{{fluxo.fluxo.tecido}}
+212200502700155DETALHES DE LAVAGEM
+212200502700143{{safeSubstring fluxo.fluxo.descricao 0 30}}
+212200502700133{{safeSubstring fluxo.fluxo.descricao 30 60}}
+1X1100000100123L002270
+211200502700070O LACRE E O TAG fixados nesta peca nao deverao ser removidos.
+211200502700060Caso contrario nao garantiremos a reproducao dos lotes.
+211200502700050Esta peca passou por processos artesanais, 
+211200502700040e tem caracteristicas irregulares nao padronizadas, 
+211200502700030tornando-a unica. Este processo apresentara variacao 
+211200502700020de intensidade de reservas e localizacao na producao,
+211200502700010isso nao sera considerado defeitos de lavanderia.
+
+Q0001
+E

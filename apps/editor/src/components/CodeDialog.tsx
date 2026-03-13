@@ -51,6 +51,16 @@ export function CodeDialog({
   onResetSample,
   isParsing,
 }: CodeDialogProps) {
+  const usedFonts = Array.from(new Set(
+    parsedDocument.elements
+      .filter(element => element.kind === 'text')
+      .map(element => {
+        const fontId = element.font?.residentId ?? '0'
+        const typeId = element.font?.typeId ?? '0'
+        return `Font ${fontId} / Tipo ${typeId}`
+      }),
+  )).sort()
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="h-[min(88vh,820px)]">
@@ -160,6 +170,9 @@ export function CodeDialog({
               <div className="rounded-lg border border-[#363636] bg-[#252525] p-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#7b7b7b]">
                   Parser status
+                </p>
+                <p className="mb-2 text-xs text-[#a8a8a8]">
+                  Fontes detectadas no PPLA: {usedFonts.length ? usedFonts.join(', ') : 'nenhuma'}
                 </p>
                 {parsedDocument.warnings.length === 0 ? (
                   <p className="text-sm text-[#99d1a7]">

@@ -27,10 +27,16 @@ function App() {
   const sourceCode = useLabelEditorStore(state => state.sourceCode)
   const document = useLabelEditorStore(state => state.document)
   const selectedId = useLabelEditorStore(state => state.selectedId)
+  const labelSizeMm = useLabelEditorStore(state => state.labelSizeMm)
+  const previewMode = useLabelEditorStore(state => state.previewMode)
+  const zoomPercent = useLabelEditorStore(state => state.zoomPercent)
   const codeDialogOpen = useLabelEditorStore(state => state.codeDialogOpen)
   const isParsing = useLabelEditorStore(state => state.isParsing)
   const setSourceCode = useLabelEditorStore(state => state.setSourceCode)
   const setCodeDialogOpen = useLabelEditorStore(state => state.setCodeDialogOpen)
+  const setLabelSizeMm = useLabelEditorStore(state => state.setLabelSizeMm)
+  const setPreviewMode = useLabelEditorStore(state => state.setPreviewMode)
+  const setZoomPercent = useLabelEditorStore(state => state.setZoomPercent)
   const selectElement = useLabelEditorStore(state => state.selectElement)
   const updateSelectedTextContent = useLabelEditorStore(state => state.updateSelectedTextContent)
   const updateSelectedElementCoordinate = useLabelEditorStore(state => state.updateSelectedElementCoordinate)
@@ -44,7 +50,13 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#1e1e1e] text-[#e5e5e5]">
-      <Toolbar onOpenCode={() => setCodeDialogOpen(true)} />
+      <Toolbar
+        onOpenCode={() => setCodeDialogOpen(true)}
+        previewMode={previewMode}
+        onPreviewModeChange={setPreviewMode}
+        zoomPercent={zoomPercent}
+        onZoomPercentChange={setZoomPercent}
+      />
       <div className="flex flex-1 overflow-hidden">
         <LayersPanel
           document={document}
@@ -55,10 +67,14 @@ function App() {
           document={document}
           selectedId={selectedId}
           onSelect={selectElement}
+          previewMode={previewMode}
+          zoomPercent={zoomPercent}
         />
         <PropertiesPanel
           document={document}
           selectedElement={selectedElement}
+          labelSizeMm={labelSizeMm}
+          onLabelSizeMmChange={setLabelSizeMm}
           onContentChange={updateSelectedTextContent}
           onCoordinateChange={updateSelectedElementCoordinate}
         />

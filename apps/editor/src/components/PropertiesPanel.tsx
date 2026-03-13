@@ -6,9 +6,11 @@ import {
   Barcode,
   Type,
   Plus,
+  Maximize2,
 } from 'lucide-react'
 
 import type { LabelElementModel, ParsedLabelDocument } from '@openlabel/core'
+import type { LabelSizeMm } from '@openlabel/store'
 
 type RightTab = 'design' | 'prototype' | 'inspect'
 
@@ -52,6 +54,8 @@ function InfoRow({ label, value }: { label: string; value: string | number }) {
 interface PropertiesPanelProps {
   document: ParsedLabelDocument
   selectedElement: LabelElementModel | null
+  labelSizeMm: LabelSizeMm | null
+  onLabelSizeMmChange: (size: LabelSizeMm | null) => void
   onContentChange: (value: string) => void
   onCoordinateChange: (axis: 'x' | 'y', value: string) => void
 }
@@ -59,10 +63,33 @@ interface PropertiesPanelProps {
 export function PropertiesPanel({
   document,
   selectedElement,
+  labelSizeMm,
+  onLabelSizeMmChange,
   onContentChange,
   onCoordinateChange,
 }: PropertiesPanelProps) {
   const [activeTab, setActiveTab] = useState<RightTab>('design')
+  const [widthInput, setWidthInput] = useState(
+    () => labelSizeMm ? String(labelSizeMm.widthMm) : String(document.canvas.widthMm),
+  )
+  const [heightInput, setHeightInput] = useState(
+    () => labelSizeMm ? String(labelSizeMm.heightMm) : String(document.canvas.heightMm),
+  )
+
+  function commitLabelSize() {
+    const w = Number(widthInput.replace(',', '.'))
+    const h = Number(heightInput.replace(',', '.'))
+
+    if (Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0) {
+      onLabelSizeMmChange({ widthMm: w, heightMm: h })
+    }
+  }
+
+  function resetLabelSize() {
+    onLabelSizeMmChange(null)
+    setWidthInput(String(document.canvas.widthMm))
+    setHeightInput(String(document.canvas.heightMm))
+  }
   const title = selectedElement?.kind === 'barcode' ? 'Barcode' : 'Text'
   const icon = selectedElement?.kind === 'barcode'
     ? <Barcode size={14} className="text-[#cfcfcf]" />
@@ -91,6 +118,56 @@ export function PropertiesPanel({
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'design' && (
           <div className="flex flex-col text-xs">
+            {/* Label size section */}
+            <div className="px-3 py-2">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5 text-[#ccc] font-semibold">
+                  <Maximize2 size={13} className="text-[#cfcfcf]" />
+                  <span>Etiqueta</span>
+                </div>
+                {labelSizeMm && (
+                  <button
+                    type="button"
+                    className="text-[10px] text-[#666] hover:text-[#f47] transition-colors"
+                    onClick={resetLabelSize}
+                  >
+                    Resetar
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-1">
+                <InputField
+                  label="L"
+                  value={widthInput}
+                  prefix="mm"
+                  onChange={setWidthInput}
+                  className="col-span-1"
+                />
+                <InputField
+                  label="A"
+                  value={heightInput}
+                  prefix="mm"
+                  onChange={setHeightInput}
+                  className="col-span-1"
+                />
+              </div>
+              <button
+                type="button"
+                className={cn(
+                  'w-full mt-1 h-6 rounded text-[11px] font-medium transition-colors',
+                  'bg-[#1971c2] hover:bg-[#1864ab] text-white',
+                )}
+                onClick={commitLabelSize}
+              >
+                Aplicar tamanho
+              </button>
+              <p className="mt-1.5 text-[10px] text-[#555] leading-4">
+                Canvas atual: {document.canvas.widthMm}mm × {document.canvas.heightMm}mm
+              </p>
+            </div>
+
+            <Divider />
+
             <div className="px-3 py-2">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1.5 text-[#ccc] font-semibold">

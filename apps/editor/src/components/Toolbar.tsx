@@ -58,11 +58,20 @@ type Tool =
 
 interface ToolbarProps {
   onOpenCode: () => void
+  previewMode: 'pixel' | 'physical'
+  onPreviewModeChange: (mode: 'pixel' | 'physical') => void
+  zoomPercent: number
+  onZoomPercentChange: (value: number) => void
 }
 
-export function Toolbar({ onOpenCode }: ToolbarProps) {
+export function Toolbar({
+  onOpenCode,
+  previewMode,
+  onPreviewModeChange,
+  zoomPercent,
+  onZoomPercentChange,
+}: ToolbarProps) {
   const [activeTool, setActiveTool] = useState<Tool>('select')
-  const [zoom, setZoom] = useState(26)
 
   return (
     <header className="flex items-center h-12 bg-[#2c2c2c] border-b border-[#3a3a3a] px-2 gap-1 select-none shrink-0">
@@ -154,6 +163,33 @@ export function Toolbar({ onOpenCode }: ToolbarProps) {
         Code
       </Button>
 
+      <div className="ml-1 inline-flex overflow-hidden rounded-md border border-[#4a4a4a] bg-[#262626] text-[11px]">
+        <button
+          type="button"
+          className={cn(
+            'px-2 py-1 transition-colors',
+            previewMode === 'pixel'
+              ? 'bg-[#1971c2] text-white'
+              : 'text-[#b3b3b3] hover:bg-white/10 hover:text-white',
+          )}
+          onClick={() => onPreviewModeChange('pixel')}
+        >
+          Pixel
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'px-2 py-1 transition-colors',
+            previewMode === 'physical'
+              ? 'bg-[#1971c2] text-white'
+              : 'text-[#b3b3b3] hover:bg-white/10 hover:text-white',
+          )}
+          onClick={() => onPreviewModeChange('physical')}
+        >
+          Fisico
+        </button>
+      </div>
+
       <div className="w-px h-6 bg-[#3a3a3a] mx-1" />
 
       {/* Share button */}
@@ -172,14 +208,14 @@ export function Toolbar({ onOpenCode }: ToolbarProps) {
       {/* Zoom control */}
       <div className="flex items-center gap-0.5">
         <button
-          onClick={() => setZoom(z => Math.max(10, z - 10))}
+          onClick={() => onZoomPercentChange(Math.max(10, zoomPercent - 10))}
           className="flex items-center justify-center w-6 h-6 text-[#b3b3b3] hover:bg-white/10 hover:text-white rounded transition-colors"
         >
           <Minus size={12} />
         </button>
-        <span className="text-xs text-[#b3b3b3] w-10 text-center">{zoom}%</span>
+        <span className="text-xs text-[#b3b3b3] w-10 text-center">{zoomPercent}%</span>
         <button
-          onClick={() => setZoom(z => Math.min(400, z + 10))}
+          onClick={() => onZoomPercentChange(Math.min(800, zoomPercent + 10))}
           className="flex items-center justify-center w-6 h-6 text-[#b3b3b3] hover:bg-white/10 hover:text-white rounded transition-colors"
         >
           <Plus size={12} />

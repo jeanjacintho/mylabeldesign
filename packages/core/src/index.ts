@@ -31,6 +31,7 @@ export interface LabelElementModel {
   font?: {
     family: string
     residentId: string
+    typeId: string
     scaleX: number
     scaleY: number
   }

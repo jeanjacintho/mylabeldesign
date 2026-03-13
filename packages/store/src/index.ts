@@ -3,6 +3,7 @@ import {
   parsePpla,
   updatePplaElementContent,
   updatePplaElementCoordinates,
+  type PplaParseOptions,
 } from '@openlabel/protocols'
 
 function resolveSelectedId(document: ParsedLabelDocument, currentSelectedId: string | null) {
@@ -17,13 +18,22 @@ function resolveSelectedId(document: ParsedLabelDocument, currentSelectedId: str
   return document.elements[0].id
 }
 
-function parseDocumentState(sourceCode: string, selectedId: string | null) {
-  const document = parsePpla(sourceCode)
+function parseDocumentState(
+  sourceCode: string,
+  selectedId: string | null,
+  parseOptions: PplaParseOptions = {},
+) {
+  const document = parsePpla(sourceCode, parseOptions)
 
   return {
     document,
     selectedId: resolveSelectedId(document, selectedId),
   }
+}
+
+export interface LabelSizeMm {
+  widthMm: number
+  heightMm: number
 }
 
 export interface LabelEditorStore {
@@ -32,18 +42,32 @@ export interface LabelEditorStore {
   sourceCode: string
   document: ParsedLabelDocument
   selectedId: string | null
+  labelSizeMm: LabelSizeMm | null
+  previewMode: 'pixel' | 'physical'
+  zoomPercent: number
   codeDialogOpen: boolean
   isParsing: boolean
   initialize: (sampleSource: string) => void
   setSourceCode: (sourceCode: string) => void
+  setLabelSizeMm: (size: LabelSizeMm | null) => void
   setCodeDialogOpen: (open: boolean) => void
+  setPreviewMode: (mode: 'pixel' | 'physical') => void
+  setZoomPercent: (value: number) => void
   selectElement: (id: string | null) => void
   updateSelectedTextContent: (value: string) => void
   updateSelectedElementCoordinate: (axis: 'x' | 'y', value: string) => void
   resetSampleSource: () => void
 }
 
-const emptyDocument = parsePpla('')
+const emptyDocument = parsePpla('', {})
+
+function getParseOptions(labelSizeMm: LabelSizeMm | null): PplaParseOptions {
+  if (!labelSizeMm) {
+    return {}
+  }
+
+  return { overrideSizeMm: labelSizeMm }
+}
 
 type Listener = () => void
 
@@ -81,6 +105,9 @@ state = {
   sourceCode: '',
   document: emptyDocument,
   selectedId: null,
+  labelSizeMm: null,
+  previewMode: 'pixel',
+  zoomPercent: 100,
   codeDialogOpen: false,
   isParsing: false,
 
@@ -92,7 +119,7 @@ state = {
       return
     }
 
-    const nextState = parseDocumentState(trimmedSource, current.selectedId)
+    const nextState = parseDocumentState(trimmedSource, current.selectedId, getParseOptions(current.labelSizeMm))
 
     setState({
       initialized: true,
@@ -105,7 +132,7 @@ state = {
 
   setSourceCode: sourceCode => {
     const current = getState()
-    const nextState = parseDocumentState(sourceCode, current.selectedId)
+    const nextState = parseDocumentState(sourceCode, current.selectedId, getParseOptions(current.labelSizeMm))
 
     setState({
       sourceCode,
@@ -115,7 +142,30 @@ state = {
     })
   },
 
+  setLabelSizeMm: size => {
+    const current = getState()
+    const nextState = parseDocumentState(current.sourceCode, current.selectedId, getParseOptions(size))
+
+    setState({
+      labelSizeMm: size,
+      document: nextState.document,
+      selectedId: nextState.selectedId,
+    })
+  },
+
   setCodeDialogOpen: codeDialogOpen => setState({ codeDialogOpen }),
+
+  setPreviewMode: previewMode => setState({ previewMode }),
+
+  setZoomPercent: value => {
+    if (!Number.isFinite(value)) {
+      return
+    }
+
+    setState({
+      zoomPercent: Math.max(10, Math.min(800, Math.round(value))),
+    })
+  },
 
   selectElement: selectedId => setState({ selectedId }),
 
