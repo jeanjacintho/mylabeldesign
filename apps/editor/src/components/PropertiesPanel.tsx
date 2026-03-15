@@ -90,8 +90,9 @@ export function PropertiesPanel({
     setWidthInput(String(document.canvas.widthMm))
     setHeightInput(String(document.canvas.heightMm))
   }
-  const title = selectedElement?.kind === 'barcode' ? 'Barcode' : 'Text'
-  const icon = selectedElement?.kind === 'barcode'
+  const kind = selectedElement?.kind ?? 'text'
+  const title = kind === 'barcode' ? 'Barcode' : kind === 'line' ? 'Line' : kind === 'box' ? 'Box' : 'Text'
+  const icon = kind === 'barcode'
     ? <Barcode size={14} className="text-[#cfcfcf]" />
     : <Type size={14} className="text-[#cfcfcf]" />
 

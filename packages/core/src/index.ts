@@ -1,6 +1,6 @@
 export type LabelProtocol = 'PPLA' | 'PPLB' | 'ZPL'
 
-export type LabelElementKind = 'text' | 'barcode'
+export type LabelElementKind = 'text' | 'barcode' | 'line' | 'box'
 
 export interface LabelSetup {
   dpi: number
@@ -39,6 +39,10 @@ export interface LabelElementModel {
     symbology: string
     narrowBarDots: number
     wideBarDots: number
+  }
+  box?: {
+    topBottomThickDots: number
+    sideThickDots: number
   }
 }
 

@@ -58,33 +58,14 @@ function drawPseudoBarcode(
 function resolveBarcodeFormat(symbology: string) {
   const normalized = symbology.toUpperCase()
 
-  if (normalized === 'X') {
-    return 'CODE128'
-  }
-
-  if (normalized === 'A') {
-    return 'CODE39'
-  }
-
-  if (normalized === 'E') {
-    return 'EAN13'
-  }
-
-  if (normalized === 'U') {
-    return 'UPC'
-  }
-
-  if (normalized === 'I') {
-    return 'ITF'
-  }
-
-  if (normalized === 'C') {
-    return 'CODABAR'
-  }
-
-  if (normalized === 'B') {
-    return 'CODE128'
-  }
+  if (normalized === 'A') return 'CODE39'
+  if (normalized === 'B') return 'CODE128'
+  if (normalized === 'C') return 'UPC'   // UPC-E
+  if (normalized === 'E') return 'CODE128'
+  if (normalized === 'F') return 'EAN13'
+  if (normalized === 'G') return 'EAN8'
+  if (normalized === 'I') return 'ITF'
+  if (normalized === 'U') return 'CODE128'
 
   return 'CODE128'
 }
@@ -130,6 +111,37 @@ function normalizeBarcodeData(format: string, rawValue: string) {
   }
 
   return trimmed || '0'
+}
+
+function drawLine(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  widthDots: number,
+  heightDots: number,
+) {
+  context.fillStyle = '#111111'
+  context.fillRect(x, y, widthDots, heightDots)
+}
+
+function drawBox(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  widthDots: number,
+  heightDots: number,
+  topBottomThick: number,
+  sideThick: number,
+) {
+  context.fillStyle = '#111111'
+  // Top edge
+  context.fillRect(x, y, widthDots, topBottomThick)
+  // Bottom edge
+  context.fillRect(x, y + heightDots - topBottomThick, widthDots, topBottomThick)
+  // Left edge
+  context.fillRect(x, y, sideThick, heightDots)
+  // Right edge
+  context.fillRect(x + widthDots - sideThick, y, sideThick, heightDots)
 }
 
 function drawThermalText(
@@ -274,8 +286,7 @@ export function Canvas({
         )
       }
 
-      if (element.kind === 'barcode') {
-        const barcodeCanvas = globalThis.document.createElement('canvas')
+      if (element.kind === 'barcode') {        const barcodeCanvas = globalThis.document.createElement('canvas')
         const moduleWidth = Math.max(1, element.barcode?.narrowBarDots ?? 2)
         const barcodeHeight = Math.max(24, element.heightDots)
         const format = resolveBarcodeFormat(element.barcode?.symbology ?? 'X')
@@ -305,6 +316,28 @@ export function Canvas({
             element.barcode?.wideBarDots ?? 4,
           )
         }
+      }
+
+      if (element.kind === 'line') {
+        drawLine(
+          context,
+          element.xDots,
+          element.yDots,
+          element.widthDots,
+          element.heightDots,
+        )
+      }
+
+      if (element.kind === 'box') {
+        drawBox(
+          context,
+          element.xDots,
+          element.yDots,
+          element.widthDots,
+          element.heightDots,
+          element.box?.topBottomThickDots ?? 2,
+          element.box?.sideThickDots ?? 2,
+        )
       }
     }
   }, [document])

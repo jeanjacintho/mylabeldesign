@@ -2,6 +2,7 @@ import type { LabelElementModel, ParsedLabelDocument } from '@openlabel/core'
 
 const DEFAULT_DPI = 203
 
+// Dot-based metrics for resident fonts. '9' = ASD smooth, ':' = Courier.
 const RESIDENT_FONT_METRICS: Record<string, {
   family: string
   cellWidthDots: number
@@ -17,6 +18,8 @@ const RESIDENT_FONT_METRICS: Record<string, {
   '6': { family: 'PPLA Font 6', cellWidthDots: 24, cellHeightDots: 32, trackingDots: 2 },
   '7': { family: 'PPLA Font 7', cellWidthDots: 28, cellHeightDots: 40, trackingDots: 3 },
   '8': { family: 'PPLA Font 8', cellWidthDots: 32, cellHeightDots: 48, trackingDots: 3 },
+  '9': { family: 'PPLA Smooth Font', cellWidthDots: 12, cellHeightDots: 16, trackingDots: 1 },
+  ':': { family: 'PPLA Courier', cellWidthDots: 10, cellHeightDots: 14, trackingDots: 1 },
 }
 
 function dotsToMm(dots: number, dpi = DEFAULT_DPI) {
@@ -31,6 +34,16 @@ function clampPositive(value: number, fallback: number) {
   return Number.isFinite(value) && value > 0 ? value : fallback
 }
 
+// Decode a PPLA scale code: '1'-'9' → 1-9 (0 treated as 1), 'A'-'O' → 10-24
+function decodeScale(code: string): number {
+  const upper = code.toUpperCase()
+  if (upper >= 'A' && upper <= 'O') {
+    return upper.charCodeAt(0) - 55 // A=10, B=11, …, O=24
+  }
+  const n = parseInt(code, 10)
+  return Number.isFinite(n) ? Math.max(1, n) : 1
+}
+
 function getContentStart(line: string) {
   const markerMatches = [line.indexOf('{{'), line.search(/[A-Za-z#]/)]
     .filter(index => index >= 0)
@@ -39,108 +52,170 @@ function getContentStart(line: string) {
   return markerMatches[0] ?? -1
 }
 
-function parseRotation(meta: string) {
-  // meta[0] is the ori field: 1=0°, 2=90°, 3=180°, 4=270°
-  const oriCode = Number(meta.at(0) ?? '1')
-  if (oriCode === 2) return 90
-  if (oriCode === 3) return 180
-  if (oriCode === 4) return 270
+// Map PPLA print direction code (R) to canvas degrees.
+// R=1 → portrait (0°), R=2 → reverse landscape (90°), R=3 → reverse portrait (180°), R=4 → landscape (270°)
+function parseRotation(R: string): number {
+  if (R === '2') return 90
+  if (R === '3') return 180
+  if (R === '4') return 270
   return 0
 }
 
-function parseFontMeta(meta: string) {
-  const parts = meta.split('')
-  const residentId = parts.at(1) ?? '0'
-  const typeId = parts.at(2) ?? '0'
-  const scaleXCode = parts.at(3) ?? '0'
-  const scaleYCode = parts.at(4) ?? '0'
-
-  const decodeScale = (value: string) => {
-    const numeric = Number(value)
-
-    if (!Number.isFinite(numeric)) {
-      return 1
-    }
-
-    // Compact flavor often uses 0 to represent the base factor.
-    return Math.max(1, numeric)
-  }
-
-  const scaleX = decodeScale(scaleXCode)
-  const scaleY = decodeScale(scaleYCode)
+// Parse font metadata from PPLA fields: t=font type, h=horizontal scale, v=vertical scale
+function parseFontMeta(t: string, h: string, v: string) {
+  const residentId = t
+  const scaleX = decodeScale(h)
+  const scaleY = decodeScale(v)
   const profile = RESIDENT_FONT_METRICS[residentId] ?? RESIDENT_FONT_METRICS['0']
 
   return {
     family: profile.family,
     residentId,
-    typeId,
+    typeId: '0',
     scaleX,
     scaleY,
   }
 }
 
+// ── Text command ──────────────────────────────────────────────────────────────
+// PPLA format: R(1) t(1) h(1) v(1) ooo(3) yyyy(4) xxxx(4) [data]
+// R=print direction (1-4), t=font type (0-9 or ':'), h=horizontal scale, v=vertical scale
+// ooo=sub-font/height code, yyyy=Y coordinate (from bottom), xxxx=X coordinate (from left)
+
 interface ParsedTextCommand {
-  meta: string
-  xDots: number
-  yDots: number
+  R: string
+  t: string
+  h: string
+  v: string
+  ooo: string
+  xDots: number   // PPLA X — horizontal offset from left
+  yDots: number   // PPLA Y — vertical offset from bottom (needs flip for screen)
   content: string
 }
 
-interface ParsedBarcodeCommand {
-  meta: string
-  data: string
-  xDots: number
-  yDots: number
+function parseTextCommand(line: string): ParsedTextCommand | null {
+  const match = line.match(
+    /^([1-4])([0-9:])([0-9A-Oa-o])([0-9A-Oa-o])(\d{3})(\d{4})(\d{4})(.+)$/,
+  )
+  if (!match) return null
+
+  const [, R, t, h, v, ooo, yyyyStr, xxxxStr, content] = match
+  const yDots = Number(yyyyStr) // PPLA Y (vertical, from bottom)
+  const xDots = Number(xxxxStr) // PPLA X (horizontal, from left)
+
+  if (!Number.isFinite(xDots) || !Number.isFinite(yDots) || !content.trim()) {
+    return null
+  }
+
+  return { R, t, h, v, ooo, xDots, yDots, content: content.trim() }
 }
 
-const SUPPORTED_BARCODE_SYMBOLOGIES = new Set(['X', 'A', 'E', 'U', 'I', 'C', 'B'])
+// ── Barcode command ───────────────────────────────────────────────────────────
+// PPLA format: R(1) t(1) h(1) v(1) ooo(3) yyyy(4) xxxx(4) [data]
+// t=barcode type letter (A-W, Z, a-w, z). 'X' and 'Y' are reserved for line/graphic commands.
 
-function parseTextCommand(line: string): ParsedTextCommand | null {
-  // Compact PPLA text commands follow: 2 + meta(6) + x(4) + y(4) + content
-  const match = line.match(/^2(?<meta>\d{6})(?<x>\d{4})(?<y>\d{4})(?<content>.+)$/)
-
-  if (!match?.groups) {
-    return null
-  }
-
-  const xDots = Number(match.groups.x)
-  const yDots = Number(match.groups.y)
-  const content = match.groups.content.trim()
-
-  if (!Number.isFinite(xDots) || !Number.isFinite(yDots) || !content) {
-    return null
-  }
-
-  return {
-    meta: match.groups.meta,
-    xDots,
-    yDots,
-    content,
-  }
+interface ParsedBarcodeCommand {
+  R: string
+  symbology: string
+  wideBarsCode: string
+  narrowBarsCode: string
+  heightCode: string
+  xDots: number
+  yDots: number
+  data: string
 }
 
 function parseBarcodeCommand(line: string): ParsedBarcodeCommand | null {
-  const match = line.match(/^1(?<meta>[A-Za-z0-9]+?)(?<data>.+?)L(?<coords>\d{6,8})$/)
+  const match = line.match(
+    /^([1-4])([A-WZa-wz])([0-9A-Oa-o])([0-9A-Oa-o])(\d{3})(\d{4})(\d{4})(.+)$/,
+  )
+  if (!match) return null
 
-  if (!match?.groups) {
-    return null
-  }
-
-  const coords = match.groups.coords
-  const splitIndex = coords.length % 2 === 0 ? coords.length / 2 : 4
-  const xDots = Number(coords.slice(0, splitIndex))
-  const yDots = Number(coords.slice(splitIndex))
-
-  if (!Number.isFinite(xDots) || !Number.isFinite(yDots)) {
-    return null
-  }
+  const [, R, t, h, v, ooo, yyyyStr, xxxxStr, data] = match
 
   return {
-    meta: match.groups.meta,
-    data: match.groups.data,
-    xDots,
-    yDots,
+    R,
+    symbology: t,
+    wideBarsCode: h,
+    narrowBarsCode: v,
+    heightCode: ooo,
+    xDots: Number(xxxxStr),
+    yDots: Number(yyyyStr),
+    data: data.trim(),
   }
+}
+
+// ── Line command ──────────────────────────────────────────────────────────────
+// PPLA format: R X [2-digit pixel size] [3 ignored digits] yyyy(4) xxxx(4) L/l aaa/aaaa bbb/bbbb
+// L → 3-digit width + height params; l → 4-digit params
+
+interface ParsedLineCommand {
+  R: string
+  xDots: number
+  yDots: number
+  widthDots: number
+  heightDots: number
+}
+
+function parseLineCommand(line: string): ParsedLineCommand | null {
+  const match = line.match(/^([1-4])X\d{5}(\d{4})(\d{4})[Ll](\d{3,4})(\d{3,4})$/)
+  if (!match) return null
+
+  const [, R, yyyyStr, xxxxStr, widthStr, heightStr] = match
+
+  return {
+    R,
+    xDots: Number(xxxxStr),
+    yDots: Number(yyyyStr),
+    widthDots: Number(widthStr),
+    heightDots: Number(heightStr),
+  }
+}
+
+// ── Box command ───────────────────────────────────────────────────────────────
+// PPLA format: R X [pixel] [3 ignored] yyyy(4) xxxx(4) B/b width height topBottom side
+// B → 3-digit params; b → 4-digit params
+
+interface ParsedBoxCommand {
+  R: string
+  xDots: number
+  yDots: number
+  widthDots: number
+  heightDots: number
+  topBottomThickDots: number
+  sideThickDots: number
+}
+
+function parseBoxCommand(line: string): ParsedBoxCommand | null {
+  const matchUpper = line.match(/^([1-4])X\d{5}(\d{4})(\d{4})B(\d{3})(\d{3})(\d{3})(\d{3})$/)
+  if (matchUpper) {
+    const [, R, yyyyStr, xxxxStr, widthStr, heightStr, topBotStr, sideStr] = matchUpper
+    return {
+      R,
+      xDots: Number(xxxxStr),
+      yDots: Number(yyyyStr),
+      widthDots: Number(widthStr),
+      heightDots: Number(heightStr),
+      topBottomThickDots: Number(topBotStr),
+      sideThickDots: Number(sideStr),
+    }
+  }
+
+  const matchLower = line.match(/^([1-4])X\d{5}(\d{4})(\d{4})b(\d{4})(\d{4})(\d{4})(\d{4})$/)
+  if (matchLower) {
+    const [, R, yyyyStr, xxxxStr, widthStr, heightStr, topBotStr, sideStr] = matchLower
+    return {
+      R,
+      xDots: Number(xxxxStr),
+      yDots: Number(yyyyStr),
+      widthDots: Number(widthStr),
+      heightDots: Number(heightStr),
+      topBottomThickDots: Number(topBotStr),
+      sideThickDots: Number(sideStr),
+    }
+  }
+
+  return null
 }
 
 function estimateTextWidth(content: string, font: NonNullable<LabelElementModel['font']>) {
@@ -158,12 +233,9 @@ function estimateTextHeight(font: NonNullable<LabelElementModel['font']>) {
 
 function buildTextElement(line: string, index: number): LabelElementModel | null {
   const parsed = parseTextCommand(line)
+  if (!parsed) return null
 
-  if (!parsed) {
-    return null
-  }
-  const meta = parsed.meta
-  const font = parseFontMeta(meta)
+  const font = parseFontMeta(parsed.t, parsed.h, parsed.v)
   const widthDots = estimateTextWidth(parsed.content, font)
   const heightDots = estimateTextHeight(font)
 
@@ -183,40 +255,24 @@ function buildTextElement(line: string, index: number): LabelElementModel | null
     yMm: 0,
     widthMm: 0,
     heightMm: 0,
-    rotation: parseRotation(meta),
-    meta,
+    rotation: parseRotation(parsed.R),
+    meta: `${parsed.R}${parsed.t}${parsed.h}${parsed.v}${parsed.ooo}`,
     font,
   }
 }
 
-function parseBarcodeMeta(meta: string) {
-  const symbology = meta.at(0) ?? 'X'
-  const numericTokens = meta.slice(1).match(/\d+/g) ?? []
-  const tail = numericTokens.at(-1) ?? ''
-  const narrowCandidate = tail.slice(-2, -1)
-  const wideCandidate = tail.slice(-1)
-
-  const narrowBarDots = clampPositive(Number(narrowCandidate || '2'), 2)
-  const wideBarDots = clampPositive(Number(wideCandidate || String(narrowBarDots + 1)), narrowBarDots + 1)
-
-  return {
-    symbology,
-    narrowBarDots,
-    wideBarDots,
-  }
-}
+const DEFAULT_BARCODE_HEIGHT_DOTS = 58
 
 function buildBarcodeElement(line: string, index: number): LabelElementModel | null {
   const parsed = parseBarcodeCommand(line)
+  if (!parsed) return null
 
-  if (!parsed) {
-    return null
-  }
-  const barcode = parseBarcodeMeta(parsed.meta)
-  const widthEstimate = parsed.data.length * (barcode.narrowBarDots * 4 + barcode.wideBarDots * 3)
+  const narrowBarDots = clampPositive(decodeScale(parsed.narrowBarsCode), 2)
+  const wideBarDots = clampPositive(decodeScale(parsed.wideBarsCode), narrowBarDots + 1)
+  const explicitHeight = Number(parsed.heightCode)
+  const heightDots = clampPositive(explicitHeight, DEFAULT_BARCODE_HEIGHT_DOTS)
+  const widthEstimate = parsed.data.length * (narrowBarDots * 4 + wideBarDots * 3)
   const widthDots = clampPositive(widthEstimate, 180)
-  const heightFromMeta = Number(parsed.meta.match(/(\d{2,3})$/)?.[1] ?? NaN)
-  const heightDots = clampPositive(heightFromMeta, 58)
 
   return {
     id: `barcode-${index}`,
@@ -234,20 +290,68 @@ function buildBarcodeElement(line: string, index: number): LabelElementModel | n
     yMm: 0,
     widthMm: 0,
     heightMm: 0,
-    rotation: 0,
-    meta: parsed.meta,
-    barcode,
+    rotation: parseRotation(parsed.R),
+    meta: `${parsed.R}${parsed.symbology}${parsed.wideBarsCode}${parsed.narrowBarsCode}${parsed.heightCode}`,
+    barcode: {
+      symbology: parsed.symbology,
+      narrowBarDots,
+      wideBarDots,
+    },
   }
 }
 
-function getBarcodeSupportWarning(element: LabelElementModel) {
-  const symbology = element.barcode?.symbology?.toUpperCase() ?? ''
+function buildLineElement(line: string, index: number): LabelElementModel | null {
+  const parsed = parseLineCommand(line)
+  if (!parsed) return null
 
-  if (!SUPPORTED_BARCODE_SYMBOLOGIES.has(symbology)) {
-    return `Simbologia de barcode ainda nao mapeada no renderer: ${symbology || 'desconhecida'}`
+  return {
+    id: `line-${index}`,
+    commandIndex: index,
+    kind: 'line',
+    name: `Line ${index + 1}`,
+    rawCommand: line,
+    content: '',
+    xDots: parsed.xDots,
+    yDots: 0,
+    sourceYDots: parsed.yDots,
+    widthDots: Math.max(1, parsed.widthDots),
+    heightDots: Math.max(1, parsed.heightDots),
+    xMm: 0,
+    yMm: 0,
+    widthMm: 0,
+    heightMm: 0,
+    rotation: parseRotation(parsed.R),
+    meta: `${parsed.R}X`,
   }
+}
 
-  return null
+function buildBoxElement(line: string, index: number): LabelElementModel | null {
+  const parsed = parseBoxCommand(line)
+  if (!parsed) return null
+
+  return {
+    id: `box-${index}`,
+    commandIndex: index,
+    kind: 'box',
+    name: `Box ${index + 1}`,
+    rawCommand: line,
+    content: '',
+    xDots: parsed.xDots,
+    yDots: 0,
+    sourceYDots: parsed.yDots,
+    widthDots: Math.max(1, parsed.widthDots),
+    heightDots: Math.max(1, parsed.heightDots),
+    xMm: 0,
+    yMm: 0,
+    widthMm: 0,
+    heightMm: 0,
+    rotation: parseRotation(parsed.R),
+    meta: `${parsed.R}X`,
+    box: {
+      topBottomThickDots: Math.max(1, parsed.topBottomThickDots),
+      sideThickDots: Math.max(1, parsed.sideThickDots),
+    },
+  }
 }
 
 function normalizeElements(
@@ -295,17 +399,19 @@ export function parsePpla(source: string, options: PplaParseOptions = {}): Parse
   lines.forEach((line, lineIndex) => {
     commands.push(line)
 
-    // f / F = form length in 1/100 inch (e.g. f320 = 3.2" = 81.3mm at 203 DPI = ~650 dots)
-    if (/^f(\d+)$/i.test(line)) {
+    // ── System / label-level setup commands ────────────────────────────────
+
+    // f / F = form length in 1/100 inch (e.g. f320 = 3.2" at 203 DPI ≈ 650 dots)
+    if (/^[fF](\d+)$/.test(line)) {
       const raw = Number(line.slice(1))
-      parsedFormLengthDots = Math.round(raw * setup.dpi / 100)
+      parsedFormLengthDots = Math.round((raw * setup.dpi) / 100)
       return
     }
 
-    // O = label width spec; treat as 1/100 inch similar to form length
+    // O = label width / print-start offset in 1/100 inch
     if (/^O(\d+)$/i.test(line)) {
       const raw = Number(line.slice(1))
-      parsedLabelWidthDots = Math.round(raw * setup.dpi / 100)
+      parsedLabelWidthDots = Math.round((raw * setup.dpi) / 100)
       return
     }
 
@@ -324,35 +430,62 @@ export function parsePpla(source: string, options: PplaParseOptions = {}): Parse
       return
     }
 
-    if (/^D.+$/i.test(line)) {
+    if (/^D\d+$/i.test(line)) {
       setup.density = line.slice(1)
       return
     }
 
-    if (line.startsWith('2')) {
-      const textElement = buildTextElement(line, elements.length)
+    // ── Image editing commands — all led by print direction digit 1–4 ──────
+    if (!/^[1-4]/.test(line)) {
+      return
+    }
 
+    const secondChar = line[1]
+
+    // Line or Box: second character is 'X'
+    if (secondChar === 'X') {
+      const isBox = /^[1-4]X\d{5}\d{4}\d{4}[Bb]/.test(line)
+      if (isBox) {
+        const boxElement = buildBoxElement(line, elements.length)
+        if (boxElement) {
+          elements.push({ ...boxElement, commandIndex: lineIndex })
+        } else {
+          warnings.push(`Nao foi possivel interpretar o comando de caixa: ${line}`)
+        }
+      } else {
+        const lineElement = buildLineElement(line, elements.length)
+        if (lineElement) {
+          elements.push({ ...lineElement, commandIndex: lineIndex })
+        } else {
+          warnings.push(`Nao foi possivel interpretar o comando de linha: ${line}`)
+        }
+      }
+      return
+    }
+
+    // Graphic image reference: second character is 'Y' — not rendered yet
+    if (secondChar === 'Y' || secondChar === 'y') {
+      return
+    }
+
+    // Text: second character is a digit (0-9) or ':' (Courier font type)
+    if (/^[0-9:]$/.test(secondChar)) {
+      const textElement = buildTextElement(line, elements.length)
       if (textElement) {
         elements.push({ ...textElement, commandIndex: lineIndex })
       } else {
         warnings.push(`Nao foi possivel interpretar a linha de texto: ${line}`)
       }
-
       return
     }
 
-    if (line.startsWith('1')) {
+    // Barcode: second character is a letter (A–W, Z, a–w, z)
+    if (/^[A-WZa-wz]$/.test(secondChar)) {
       const barcodeElement = buildBarcodeElement(line, elements.length)
-
       if (barcodeElement) {
         elements.push({ ...barcodeElement, commandIndex: lineIndex })
-        const barcodeWarning = getBarcodeSupportWarning(barcodeElement)
-
-        if (barcodeWarning) {
-          warnings.push(`${barcodeWarning}. Linha: ${line}`)
-        }
       } else {
-        warnings.push(`Nao foi possivel interpretar a linha de codigo de barras: ${line}`)
+        warnings.push(`Nao foi possivel interpretar o codigo de barras: ${line}`)
       }
     }
   })
@@ -459,23 +592,28 @@ export function updatePplaElementCoordinates(
       return source
     }
 
-    const coords = `${String(Math.max(0, xDots)).padStart(4, '0')}${String(normalizedYDots).padStart(4, '0')}`
+    // PPLA text format: R t h v ooo yyyy xxxx [data]
+    // yyyy is at offset -8..-5 from contentStart, xxxx at offset -4..0
+    // Write yyyy (PPLA Y) first, then xxxx (PPLA X)
+    const coords
+      = `${String(normalizedYDots).padStart(4, '0')}${String(Math.max(0, xDots)).padStart(4, '0')}`
     lines[element.commandIndex] = `${prefix.slice(0, -8)}${coords}${targetLine.slice(contentStart)}`
     return lines.join('\n')
   }
 
-  const barcodeMatch = targetLine.match(/L(\d{6,8})$/)
+  if (element.kind === 'barcode') {
+    // Barcode command: R t h v ooo yyyy xxxx [data] (same layout as text)
+    const match = targetLine.match(
+      /^([1-4][A-WZa-wz][0-9A-Oa-o][0-9A-Oa-o]\d{3})(\d{4})(\d{4})(.+)$/,
+    )
+    if (!match) return source
 
-  if (!barcodeMatch) {
-    return source
+    const [, prefix, , , data] = match
+    const newCoords
+      = `${String(normalizedYDots).padStart(4, '0')}${String(Math.max(0, xDots)).padStart(4, '0')}`
+    lines[element.commandIndex] = `${prefix}${newCoords}${data}`
+    return lines.join('\n')
   }
 
-  const coordsLength = barcodeMatch[1].length
-  const splitIndex = coordsLength % 2 === 0 ? coordsLength / 2 : 4
-  const xPart = String(Math.max(0, xDots)).padStart(splitIndex, '0')
-  const yPart = String(normalizedYDots).padStart(coordsLength - splitIndex, '0')
-
-  lines[element.commandIndex] = targetLine.replace(/L\d{6,8}$/, `L${xPart}${yPart}`)
-
-  return lines.join('\n')
+  return source
 }

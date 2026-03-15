@@ -32,9 +32,11 @@ const ICON_MAP: Record<LayerType, React.ReactNode> = {
   ellipse: <Circle size={13} className="text-[#b3b3b3]" />,
 }
 
-const PARSED_ICON_MAP = {
+const PARSED_ICON_MAP: Record<string, React.ReactNode> = {
   text: <Type size={13} className="text-[#b3b3b3]" />,
   barcode: <Barcode size={13} className="text-[#b3b3b3]" />,
+  line: <Square size={13} className="text-[#b3b3b3]" />,
+  box: <Square size={13} className="text-[#b3b3b3]" />,
 }
 
 interface LayerRowProps {
