@@ -60,3 +60,5 @@ previews/
 
 # Excluir arquivos de spooler temporários
 spooler_tmp/
+
+.cursor/
