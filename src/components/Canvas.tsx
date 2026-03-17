@@ -1,32 +1,57 @@
-import { useRef, useState } from 'react'
+import { PplaParserService, PplaRendererService } from '@/lib/ppla-engine'
 import { cn } from '@/lib/utils'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-interface LabelElement {
-  id: string
-  x: number
-  y: number
-  width: number
-  height: number
-  selected?: boolean
+interface CanvasProps {
+  pplaCode: string
 }
 
-const INITIAL_ELEMENTS: LabelElement[] = [
-  { id: 'rect-1', x: 20, y: 50, width: 100, height: 100 },
-  { id: 'rect-2', x: 150, y: 50, width: 100, height: 100 },
-  { id: 'rect-3', x: 280, y: 50, width: 100, height: 100 },
-]
+const LABEL_WIDTH = 520
+const LABEL_HEIGHT = 280
+const RENDER_SCALE_FACTOR = 2
 
-const LABEL_WIDTH = 500
-const LABEL_HEIGHT = 200
-
-export function Canvas() {
-  const canvasRef = useRef<HTMLDivElement>(null)
+export function Canvas({ pplaCode }: CanvasProps) {
+  const canvasContainerRef = useRef<HTMLDivElement>(null)
+  const canvasElementRef = useRef<HTMLCanvasElement>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [zoom] = useState(1)
+  const parser = useMemo(() => {
+    return new PplaParserService({ normalizeLineEndings: true })
+  }, [])
+  const renderer = useMemo(() => {
+    return new PplaRendererService({ dpi: 203, scaleFactor: RENDER_SCALE_FACTOR })
+  }, [])
+
+  useEffect(() => {
+    const canvas = canvasElementRef.current
+    if (!canvas) {
+      return
+    }
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      return
+    }
+
+    const devicePixelRatio = window.devicePixelRatio || 1
+    canvas.width = Math.floor(LABEL_WIDTH * devicePixelRatio)
+    canvas.height = Math.floor(LABEL_HEIGHT * devicePixelRatio)
+    canvas.style.width = `${LABEL_WIDTH}px`
+    canvas.style.height = `${LABEL_HEIGHT}px`
+
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
+    ctx.clearRect(0, 0, LABEL_WIDTH, LABEL_HEIGHT)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, LABEL_WIDTH, LABEL_HEIGHT)
+    ctx.fillStyle = '#111827'
+
+    const elements = parser.parse(pplaCode)
+    renderer.render(elements, ctx)
+  }, [parser, pplaCode, renderer])
 
   return (
     <div
-      ref={canvasRef}
+      ref={canvasContainerRef}
       className="flex-1 relative overflow-hidden bg-[#1a1a1a]"
       style={{
         backgroundImage:
@@ -119,43 +144,30 @@ export function Canvas() {
           {/* Label outer frame */}
           <div
             className="relative bg-[#f5f5f5] shadow-2xl"
-            style={{ width: LABEL_WIDTH, height: LABEL_HEIGHT + 80 }}
+            style={{ width: LABEL_WIDTH + 16, height: LABEL_HEIGHT + 16 }}
           >
-            {/* "Frame 2" - inner frame with auto-layout */}
+            {/* "Frame 2" - label render surface */}
             <div
               className={cn(
-                'absolute border-2 bg-white/50',
+                'absolute border-2 bg-white',
                 selectedId === 'frame-2'
                   ? 'border-[#1971c2]'
                   : 'border-[#ff6b6b]',
               )}
-              style={{ left: 8, top: 8, width: LABEL_WIDTH - 16, height: LABEL_HEIGHT }}
+              style={{ left: 8, top: 8, width: LABEL_WIDTH, height: LABEL_HEIGHT }}
               onClick={e => {
                 e.stopPropagation()
                 setSelectedId('frame-2')
               }}
             >
-              {/* "Hug x Hug" badge */}
               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[#1971c2] text-white text-[10px] px-2 py-0.5 rounded whitespace-nowrap">
-                Hug × Hug
+                PPLA Preview
               </div>
 
-              {/* Child rectangles */}
-              <div className="flex items-center gap-3 p-4 h-full">
-                {INITIAL_ELEMENTS.map(el => (
-                  <div
-                    key={el.id}
-                    className={cn(
-                      'flex-1 h-full bg-[#d4d4d4] border-2 border-transparent transition-colors rounded-sm cursor-pointer',
-                      selectedId === el.id && 'border-[#1971c2]',
-                    )}
-                    onClick={e => {
-                      e.stopPropagation()
-                      setSelectedId(el.id)
-                    }}
-                  />
-                ))}
-              </div>
+              <canvas
+                ref={canvasElementRef}
+                className="block h-full w-full bg-white"
+              />
             </div>
           </div>
         </div>

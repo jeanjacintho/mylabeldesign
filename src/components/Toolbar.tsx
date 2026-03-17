@@ -4,6 +4,7 @@ import {
   Frame,
   Square,
   Pen,
+  Code2,
   Type,
   Scale,
   Hand,
@@ -17,6 +18,10 @@ import {
   Plus,
 } from 'lucide-react'
 import { useState } from 'react'
+
+interface ToolbarProps {
+  onTogglePplaCode?: () => void
+}
 
 interface ToolButtonProps {
   icon: React.ReactNode
@@ -53,7 +58,7 @@ type Tool =
   | 'hand'
   | 'comment'
 
-export function Toolbar() {
+export function Toolbar({ onTogglePplaCode }: ToolbarProps) {
   const [activeTool, setActiveTool] = useState<Tool>('select')
   const [zoom, setZoom] = useState(26)
 
@@ -141,6 +146,16 @@ export function Toolbar() {
       {/* Right side controls */}
       <ToolButton icon={<Pipette size={16} />} label="Assets" />
       <ToolButton icon={<SunMoon size={16} />} label="Toggle theme" />
+
+      <div className="w-px h-6 bg-[#3a3a3a] mx-1" />
+
+      <button
+        className="flex items-center gap-1.5 px-3 h-7 bg-[#111827] hover:bg-[#0f172a] text-[#e5e5e5] text-[11px] font-medium rounded-md border border-[#374151] transition-colors"
+        onClick={onTogglePplaCode}
+      >
+        <Code2 size={14} />
+        <span>Code</span>
+      </button>
 
       <div className="w-px h-6 bg-[#3a3a3a] mx-1" />
 
