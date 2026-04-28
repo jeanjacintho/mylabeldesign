@@ -149,11 +149,10 @@ export function Toolbar({ onTogglePplaCode }: ToolbarProps) {
 
       <div className="w-px h-6 bg-[#3a3a3a] mx-1" />
 
-      <button
-        className="flex items-center gap-1.5 px-3 h-7 bg-[#111827] hover:bg-[#0f172a] text-[#e5e5e5] text-[11px] font-medium rounded-md border border-[#374151] transition-colors"
+      <button className="flex items-center gap-1.5 px-3 h-7 bg-[#111827] hover:bg-[#0f172a] text-[#e5e5e5] text-xs font-semibold rounded-md transition-colors"
         onClick={onTogglePplaCode}
       >
-        <Code2 size={14} />
+        <Code2 size={13} />
         <span>Code</span>
       </button>
 

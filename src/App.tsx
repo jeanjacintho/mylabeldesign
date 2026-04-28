@@ -1,20 +1,44 @@
 import { Copy, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
+import { estimateCoordinateDpiFromPplaCode } from '@/lib/ppla-engine'
+import {
+  DEFAULT_LABEL_HEIGHT_MM,
+  DEFAULT_LABEL_WIDTH_MM,
+  DEFAULT_PREVIEW_SCREEN_SCALE,
+  DEFAULT_PRINTER_DPI,
+} from '@/lib/label-units'
 import { Toolbar } from './components/Toolbar'
 import { LayersPanel } from './components/LayersPanel'
 import { Canvas } from './components/Canvas'
 import { PropertiesPanel } from './components/PropertiesPanel'
 
-const INITIAL_PPLA_CODE = `A0A1100,50,"MyLabelDesign"
-X10,90,480,100,2`
+const INITIAL_PPLA_CODE = `121100001000000MyLabelDesign
+1X1100001000200B200030002003`
 const DEFAULT_PPLA_PANEL_WIDTH = 440
 const MIN_PPLA_PANEL_WIDTH = 320
 const MAX_PPLA_PANEL_WIDTH = 760
+const MIN_LABEL_MM = 5
+const MAX_LABEL_MM = 400
+
+function clampLabelMm(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback
+  }
+  return Math.min(MAX_LABEL_MM, Math.max(MIN_LABEL_MM, value))
+}
 
 function App() {
   const [isPplaPanelOpen, setIsPplaPanelOpen] = useState(false)
   const [pplaCode, setPplaCode] = useState(INITIAL_PPLA_CODE)
+  const [labelWidthMm, setLabelWidthMm] = useState(DEFAULT_LABEL_WIDTH_MM)
+  const [labelHeightMm, setLabelHeightMm] = useState(DEFAULT_LABEL_HEIGHT_MM)
+  const [printerDpi, setPrinterDpi] = useState(DEFAULT_PRINTER_DPI)
+
+  const layoutDpi = useMemo(
+    () => estimateCoordinateDpiFromPplaCode(pplaCode) ?? printerDpi,
+    [pplaCode, printerDpi],
+  )
   const [pplaPanelWidth, setPplaPanelWidth] = useState(DEFAULT_PPLA_PANEL_WIDTH)
   const [isResizingPplaPanel, setIsResizingPplaPanel] = useState(false)
   const lineNumbers = useMemo(() => {
@@ -58,8 +82,25 @@ function App() {
       />
       <div className="flex flex-1 overflow-hidden">
         <LayersPanel />
-        <Canvas pplaCode={pplaCode} />
-        <PropertiesPanel />
+        <Canvas
+          pplaCode={pplaCode}
+          labelWidthMm={labelWidthMm}
+          labelHeightMm={labelHeightMm}
+          coordinateDpi={layoutDpi}
+          previewScreenScale={DEFAULT_PREVIEW_SCREEN_SCALE}
+        />
+        <PropertiesPanel
+          labelWidthMm={labelWidthMm}
+          labelHeightMm={labelHeightMm}
+          printerDpi={printerDpi}
+          layoutDpi={layoutDpi}
+          previewScreenScale={DEFAULT_PREVIEW_SCREEN_SCALE}
+          onPrinterDpiChange={setPrinterDpi}
+          onApplyLabelSizeMm={(widthMm, heightMm) => {
+            setLabelWidthMm(clampLabelMm(widthMm, DEFAULT_LABEL_WIDTH_MM))
+            setLabelHeightMm(clampLabelMm(heightMm, DEFAULT_LABEL_HEIGHT_MM))
+          }}
+        />
       </div>
 
       {isPplaPanelOpen && (

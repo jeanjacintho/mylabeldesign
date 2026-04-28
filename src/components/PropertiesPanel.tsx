@@ -1,4 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  COMMON_PRINTER_DPIS,
+  labelMmToPreviewPx,
+} from '@/lib/label-units'
 import { cn } from '@/lib/utils'
 import {
   AlignStartVertical,
@@ -73,8 +77,62 @@ function Divider() {
   return <div className="h-px bg-[#3a3a3a] mx-0" />
 }
 
-export function PropertiesPanel() {
+interface PropertiesPanelProps {
+  labelWidthMm: number
+  labelHeightMm: number
+  printerDpi: number
+  /** Mesmo DPI usado no canvas (Dwh do PPLA quando existir, senão DPI da UI). */
+  layoutDpi: number
+  previewScreenScale: number
+  onPrinterDpiChange: (dpi: number) => void
+  onApplyLabelSizeMm: (widthMm: number, heightMm: number) => void
+}
+
+function parseMmInput(raw: string): number | null {
+  const normalized = raw.trim().replace(',', '.')
+  if (normalized === '') {
+    return null
+  }
+  const n = Number.parseFloat(normalized)
+  if (!Number.isFinite(n)) {
+    return null
+  }
+  return n
+}
+
+export function PropertiesPanel({
+  labelWidthMm,
+  labelHeightMm,
+  printerDpi,
+  layoutDpi,
+  previewScreenScale,
+  onPrinterDpiChange,
+  onApplyLabelSizeMm,
+}: PropertiesPanelProps) {
   const [activeTab, setActiveTab] = useState<RightTab>('design')
+  const [draftWidthMm, setDraftWidthMm] = useState(String(labelWidthMm))
+  const [draftHeightMm, setDraftHeightMm] = useState(String(labelHeightMm))
+
+  useEffect(() => {
+    setDraftWidthMm(String(labelWidthMm))
+  }, [labelWidthMm])
+
+  useEffect(() => {
+    setDraftHeightMm(String(labelHeightMm))
+  }, [labelHeightMm])
+
+  const draftPreviewHint = useMemo(() => {
+    const w = parseMmInput(draftWidthMm)
+    const h = parseMmInput(draftHeightMm)
+    if (w === null || h === null) {
+      return null
+    }
+    return {
+      pxW: Math.round(labelMmToPreviewPx(w, layoutDpi, previewScreenScale)),
+      pxH: Math.round(labelMmToPreviewPx(h, layoutDpi, previewScreenScale)),
+    }
+  }, [draftHeightMm, draftWidthMm, layoutDpi, previewScreenScale])
+
   const [x, setX] = useState('171')
   const [y, setY] = useState('285')
   const [w] = useState('1578')
@@ -110,6 +168,67 @@ export function PropertiesPanel() {
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'design' && (
           <div className="flex flex-col text-xs">
+            {/* Canvas / etiqueta em mm — aplica só no botão */}
+            <div className="px-3 py-2">
+              <span className="text-[#ccc] font-semibold block mb-2">Canvas</span>
+              <p className="text-[11px] text-[#555] mb-2">
+                Largura e altura físicas (mm). O preview usa o mesmo DPI das coordenadas do PPLA
+                (ex. Dwh) quando existir; senão o DPI escolhido abaixo.
+              </p>
+              <div className="mb-2 flex flex-col gap-1">
+                <label className="text-[10px] text-[#666]" htmlFor="printer-dpi">
+                  DPI impressora
+                </label>
+                <select
+                  id="printer-dpi"
+                  className="h-7 rounded border border-[#3a3a3a] bg-[#1a1a1a] px-2 text-xs text-[#ccc] outline-none focus:border-[#1971c2]"
+                  value={printerDpi}
+                  onChange={e => onPrinterDpiChange(Number(e.target.value))}
+                >
+                  {COMMON_PRINTER_DPIS.map(d => (
+                    <option key={d} value={d}>
+                      {d} dpi
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <InputField
+                  label="W"
+                  prefix="mm"
+                  value={draftWidthMm}
+                  onChange={setDraftWidthMm}
+                />
+                <InputField
+                  label="H"
+                  prefix="mm"
+                  value={draftHeightMm}
+                  onChange={setDraftHeightMm}
+                />
+              </div>
+              {draftPreviewHint !== null && (
+                <p className="text-[10px] text-[#64748b] mb-2">
+                  Preview ≈ {draftPreviewHint.pxW} × {draftPreviewHint.pxH} px @ {printerDpi} dpi
+                  (escala {previewScreenScale}×)
+                </p>
+              )}
+              <button
+                type="button"
+                className="w-full rounded-md bg-[#1971c2] px-3 py-2 text-[11px] font-semibold text-white transition-colors hover:bg-[#1864ab]"
+                onClick={() => {
+                  const w = parseMmInput(draftWidthMm)
+                  const h = parseMmInput(draftHeightMm)
+                  if (w !== null && h !== null) {
+                    onApplyLabelSizeMm(w, h)
+                  }
+                }}
+              >
+                Aplicar tamanho
+              </button>
+            </div>
+
+            <Divider />
+
             {/* Alignment row */}
             <div className="flex items-center justify-between px-2 py-2">
               <AlignButton icon={<AlignStartVertical size={14} />} label="Align left" />

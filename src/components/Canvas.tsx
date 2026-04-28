@@ -1,28 +1,134 @@
-import { PplaParserService, PplaRendererService } from '@/lib/ppla-engine'
+import {
+  DEFAULT_LABEL_HEIGHT_MM,
+  DEFAULT_LABEL_WIDTH_MM,
+  DEFAULT_PREVIEW_SCREEN_SCALE,
+  labelMmToPreviewPx,
+} from '@/lib/label-units'
+import {
+  estimatePplaLayoutExtentsDots,
+  parsePplaLabelPreamble,
+  PplaParserService,
+  pplaLayoutExtentsToMinLabelMm,
+  PPLA_LAYOUT_MARGIN_DOTS,
+  PplaRendererService,
+  printStartOffsetDotsX,
+  shiftPplaElements,
+  verticalPrintOffsetDotsY,
+} from '@/lib/ppla-engine'
 import { cn } from '@/lib/utils'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 interface CanvasProps {
   pplaCode: string
+  labelWidthMm: number
+  labelHeightMm: number
+  /** DPI efetivo: Dwh do PPLA quando existir, senão o DPI escolhido na UI. */
+  coordinateDpi: number
+  previewScreenScale?: number
 }
 
-const LABEL_WIDTH = 520
-const LABEL_HEIGHT = 280
-const RENDER_SCALE_FACTOR = 2
+export function Canvas({
+  pplaCode,
+  labelWidthMm = DEFAULT_LABEL_WIDTH_MM,
+  labelHeightMm = DEFAULT_LABEL_HEIGHT_MM,
+  coordinateDpi,
+  previewScreenScale = DEFAULT_PREVIEW_SCREEN_SCALE,
+}: CanvasProps) {
 
-export function Canvas({ pplaCode }: CanvasProps) {
+  const parser = useMemo(() => {
+    return new PplaParserService({
+      normalizeLineEndings: true,
+      printerDpi: coordinateDpi,
+    })
+  }, [coordinateDpi])
+
+  const pplaParse = useMemo(() => {
+    return parser.parseWithDiagnostics(pplaCode)
+  }, [parser, pplaCode])
+  const parsedElements = pplaParse.elements
+  const pplaLabelState = pplaParse.label
+
+  const labelPreamble = useMemo(() => {
+    return parsePplaLabelPreamble(pplaCode)
+  }, [pplaCode])
+
+  const printStartShiftXDots = useMemo(() => {
+    return printStartOffsetDotsX(labelPreamble, coordinateDpi)
+  }, [coordinateDpi, labelPreamble])
+
+  const verticalPrintShiftYDots = useMemo(() => {
+    return verticalPrintOffsetDotsY(labelPreamble, coordinateDpi)
+  }, [coordinateDpi, labelPreamble])
+
+  const layoutElements = useMemo(() => {
+    return shiftPplaElements(
+      parsedElements,
+      printStartShiftXDots,
+      verticalPrintShiftYDots,
+    )
+  }, [parsedElements, printStartShiftXDots, verticalPrintShiftYDots])
+
+  const layoutExtents = useMemo(() => {
+    return estimatePplaLayoutExtentsDots(layoutElements)
+  }, [layoutElements])
+
+  const minLabelFromPplaMm = useMemo(() => {
+    return pplaLayoutExtentsToMinLabelMm(
+      layoutExtents,
+      coordinateDpi,
+      PPLA_LAYOUT_MARGIN_DOTS,
+    )
+  }, [coordinateDpi, layoutExtents])
+
+  const effectiveLabelWidthMm = Math.max(
+    labelWidthMm,
+    minLabelFromPplaMm.minWidthMm,
+  )
+  const minHeightFromFStopMm = useMemo(() => {
+    const h = pplaLabelState.heightHundredths
+    if (h == null || h <= 0) {
+      return 0
+    }
+    return (h / 100) * 25.4
+  }, [pplaLabelState.heightHundredths])
+
+  const effectiveLabelHeightMm = Math.max(
+    labelHeightMm,
+    minLabelFromPplaMm.minHeightMm,
+    minHeightFromFStopMm,
+  )
+
+  const labelWidthPx = useMemo(
+    () =>
+      labelMmToPreviewPx(
+        effectiveLabelWidthMm,
+        coordinateDpi,
+        previewScreenScale,
+      ),
+    [coordinateDpi, effectiveLabelWidthMm, previewScreenScale],
+  )
+  const labelHeightPx = useMemo(
+    () =>
+      labelMmToPreviewPx(
+        effectiveLabelHeightMm,
+        coordinateDpi,
+        previewScreenScale,
+      ),
+    [coordinateDpi, effectiveLabelHeightMm, previewScreenScale],
+  )
+
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   const canvasElementRef = useRef<HTMLCanvasElement>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [zoom] = useState(1)
-  const parser = useMemo(() => {
-    return new PplaParserService({ normalizeLineEndings: true })
-  }, [])
   const renderer = useMemo(() => {
-    return new PplaRendererService({ dpi: 203, scaleFactor: RENDER_SCALE_FACTOR })
-  }, [])
+    return new PplaRendererService({
+      dpi: coordinateDpi,
+      scaleFactor: previewScreenScale,
+    })
+  }, [coordinateDpi, previewScreenScale])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasElementRef.current
     if (!canvas) {
       return
@@ -34,20 +140,24 @@ export function Canvas({ pplaCode }: CanvasProps) {
     }
 
     const devicePixelRatio = window.devicePixelRatio || 1
-    canvas.width = Math.floor(LABEL_WIDTH * devicePixelRatio)
-    canvas.height = Math.floor(LABEL_HEIGHT * devicePixelRatio)
-    canvas.style.width = `${LABEL_WIDTH}px`
-    canvas.style.height = `${LABEL_HEIGHT}px`
+    const logicalWidthPx = Math.max(1, Math.floor(labelWidthPx))
+    const logicalHeightPx = Math.max(1, Math.floor(labelHeightPx))
+    canvas.width = Math.floor(logicalWidthPx * devicePixelRatio)
+    canvas.height = Math.floor(logicalHeightPx * devicePixelRatio)
+    canvas.style.width = `${logicalWidthPx}px`
+    canvas.style.height = `${logicalHeightPx}px`
 
     ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
-    ctx.clearRect(0, 0, LABEL_WIDTH, LABEL_HEIGHT)
+    ctx.clearRect(0, 0, logicalWidthPx, logicalHeightPx)
     ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, LABEL_WIDTH, LABEL_HEIGHT)
+    ctx.fillRect(0, 0, logicalWidthPx, logicalHeightPx)
     ctx.fillStyle = '#111827'
 
-    const elements = parser.parse(pplaCode)
-    renderer.render(elements, ctx)
-  }, [parser, pplaCode, renderer])
+    renderer.render(layoutElements, ctx, {
+      canvasHeightPx: logicalHeightPx,
+      labelState: pplaLabelState,
+    })
+  }, [labelHeightPx, labelWidthPx, layoutElements, pplaLabelState, renderer])
 
   return (
     <div
@@ -144,7 +254,10 @@ export function Canvas({ pplaCode }: CanvasProps) {
           {/* Label outer frame */}
           <div
             className="relative bg-[#f5f5f5] shadow-2xl"
-            style={{ width: LABEL_WIDTH + 16, height: LABEL_HEIGHT + 16 }}
+            style={{
+              width: labelWidthPx + 16,
+              height: labelHeightPx + 16,
+            }}
           >
             {/* "Frame 2" - label render surface */}
             <div
@@ -154,7 +267,12 @@ export function Canvas({ pplaCode }: CanvasProps) {
                   ? 'border-[#1971c2]'
                   : 'border-[#ff6b6b]',
               )}
-              style={{ left: 8, top: 8, width: LABEL_WIDTH, height: LABEL_HEIGHT }}
+              style={{
+                left: 8,
+                top: 8,
+                width: labelWidthPx,
+                height: labelHeightPx,
+              }}
               onClick={e => {
                 e.stopPropagation()
                 setSelectedId('frame-2')
