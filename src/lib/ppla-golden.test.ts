@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { emitPplaLineLine, emitPplaTextLine } from '@/lib/ppla-emit'
 import { getBaseFontHeightDots } from '@/lib/ppla-layout'
 import { parsePplaCode } from '@/lib/ppla-parse-image'
-import type { PplaLine, PplaText } from '@/lib/ppla-model'
+import type { PplaBarcode, PplaLine, PplaText } from '@/lib/ppla-model'
 import { mapDirectionCharToRotation } from '@/lib/ppla-model'
 import { DEFAULT_PRINTER_DPI } from '@/lib/label-units'
 
@@ -79,6 +79,22 @@ describe('getBaseFontHeightDots (guia A7/AD)', () => {
   it('fonte 9 + 003 → 10pt ≈ dots 203DPI', () => {
     const dots = getBaseFontHeightDots('9', '003')
     expect(dots).toBe(Math.max(4, Math.round((10 / 72) * 203)))
+  })
+})
+
+describe('código de barras (guia A7, pág. 53)', () => {
+  it('1A0000000200000BC 1 — ooo="000" é altura padrão, não zero', () => {
+    const { elements } = parsePplaCode('1A0000000200000BC 1', { printerDpi: 203 })
+    expect(elements).toHaveLength(1)
+    const b = elements[0] as PplaBarcode
+    expect(b.type).toBe('barcode')
+    expect(b.height).toBeGreaterThan(0)
+  })
+
+  it('1A0063000020040BC 3 — ooo="630" mantém a altura explícita', () => {
+    const { elements } = parsePplaCode('1A0063000020040BC 3', { printerDpi: 203 })
+    const b = elements[0] as PplaBarcode
+    expect(b.height).toBe(630)
   })
 })
 

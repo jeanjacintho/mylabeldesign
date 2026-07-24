@@ -25,6 +25,8 @@ import { parseScaleChar } from '@/lib/ppla-scale'
 
 const A7_HEADER_LENGTH = 15
 const GRAPHIC_NAME_MAX_LENGTH = 16
+/** ooo="000" no header de código de barras significa "altura padrão" (guia A7, pág. 53), não zero. */
+const BARCODE_DEFAULT_HEIGHT_DOTS = 50
 
 export const isIgnorableLabelFormattingLine = isIgnorablePplaFormattingLine
 
@@ -143,7 +145,8 @@ function parseBarcodeHeader(
   const ooo = header.slice(4, 7)
   const coordinates = parseA7HeaderCoordinates(header)
 
-  const height = parseThreeDigitField(ooo)
+  const parsedHeight = parseThreeDigitField(ooo)
+  const height = parsedHeight === 0 ? BARCODE_DEFAULT_HEIGHT_DOTS : parsedHeight
   const wideBarScale = parseScaleChar(h)
   const narrowBarScale = parseScaleChar(v)
 
