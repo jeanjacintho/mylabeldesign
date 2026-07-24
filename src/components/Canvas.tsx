@@ -5,11 +5,8 @@ import {
   labelMmToPreviewPx,
 } from '@/lib/label-units'
 import {
-  estimatePplaLayoutExtentsDots,
   parsePplaLabelPreamble,
   PplaParserService,
-  pplaLayoutExtentsToMinLabelMm,
-  PPLA_LAYOUT_MARGIN_DOTS,
   PplaRendererService,
   printStartOffsetDotsX,
   shiftPplaElements,
@@ -68,35 +65,15 @@ export function Canvas({
     )
   }, [parsedElements, printStartShiftXDots, verticalPrintShiftYDots])
 
-  const layoutExtents = useMemo(() => {
-    return estimatePplaLayoutExtentsDots(layoutElements)
-  }, [layoutElements])
-
-  const minLabelFromPplaMm = useMemo(() => {
-    return pplaLayoutExtentsToMinLabelMm(
-      layoutExtents,
-      coordinateDpi,
-      PPLA_LAYOUT_MARGIN_DOTS,
-    )
-  }, [coordinateDpi, layoutExtents])
-
-  const effectiveLabelWidthMm = Math.max(
-    labelWidthMm,
-    minLabelFromPplaMm.minWidthMm,
-  )
-  const minHeightFromFStopMm = useMemo(() => {
-    const h = pplaLabelState.heightHundredths
-    if (h == null || h <= 0) {
-      return 0
-    }
-    return (h / 100) * 25.4
-  }, [pplaLabelState.heightHundredths])
-
-  const effectiveLabelHeightMm = Math.max(
-    labelHeightMm,
-    minLabelFromPplaMm.minHeightMm,
-    minHeightFromFStopMm,
-  )
+  /**
+   * A impressora física NUNCA estica a etiqueta pra caber conteúdo: a largura é fixa pelo
+   * cabeçote, e a altura só cresce em modo contínuo por comando explícito do próprio PPLA
+   * (guia A5, `<STX>c`). O tamanho aqui é o que o usuário define no painel de propriedades —
+   * conteúdo que ultrapassa esses limites deve aparecer cortado no preview, igual à impressora
+   * real, em vez do canvas crescer sozinho e ignorar o valor escolhido.
+   */
+  const effectiveLabelWidthMm = labelWidthMm
+  const effectiveLabelHeightMm = labelHeightMm
 
   const labelWidthPx = useMemo(
     () =>
