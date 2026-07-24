@@ -47,28 +47,25 @@ export class PplaRendererService {
   ): void {
     const { canvasHeightPx, labelState } = renderContext
     for (const element of elements) {
+      ctx.save()
+      /** A1 = XOR (tinta sobreposta se cancela), A2 = OR (aditivo) — guia A6 */
+      ctx.globalCompositeOperation = element.logicMode === 1 ? 'xor' : 'source-over'
+
       if (element.type === 'text') {
         this.renderText(element, ctx, canvasHeightPx, labelState)
-        continue
-      }
-      if (element.type === 'box') {
+      } else if (element.type === 'box') {
         this.renderBox(element, ctx, canvasHeightPx, labelState)
-        continue
-      }
-      if (element.type === 'line') {
+      } else if (element.type === 'line') {
         this.renderLine(element, ctx, canvasHeightPx, labelState)
-        continue
-      }
-      if (element.type === 'barcode') {
+      } else if (element.type === 'barcode') {
         this.renderBarcode(element, ctx, canvasHeightPx, labelState)
-        continue
-      }
-      if (element.type === 'graphic') {
+      } else if (element.type === 'graphic') {
         this.renderGraphicReference(element, ctx, canvasHeightPx, labelState)
-        continue
+      } else {
+        console.warn('[PplaRendererService] Ignored unsupported element:', element)
       }
 
-      console.warn('[PplaRendererService] Ignored unsupported element:', element)
+      ctx.restore()
     }
   }
 
@@ -121,17 +118,13 @@ export class PplaRendererService {
     this.applyRotation(ctx, element.rotation)
 
     ctx.textBaseline = 'bottom'
-    ctx.textAlign = 'left'
     ctx.font = `${fontSizePx}px monospace`
 
-    if (element.widthMultiplier > 1) {
-      ctx.save()
-      ctx.scale(Math.max(1, element.widthMultiplier), 1)
-      ctx.fillText(element.text, 0, heightPx)
-      ctx.restore()
-    } else {
-      ctx.fillText(element.text, 0, heightPx)
-    }
+    /** M (mirror): espelha o campo mantendo o ponto de ancoragem (x,y) fixo — guia A6 */
+    const widthScale = Math.max(1, element.widthMultiplier) * (element.mirror ? -1 : 1)
+    ctx.scale(widthScale, 1)
+    ctx.textAlign = element.mirror ? 'right' : 'left'
+    ctx.fillText(element.text, 0, heightPx)
 
     ctx.restore()
   }

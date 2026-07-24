@@ -24,6 +24,10 @@ export interface PplaElement {
   x: number
   y: number
   rotation: PplaRotation
+  /** Estado de `M` (mirror) no momento em que o elemento foi declarado (guia A6). */
+  mirror?: boolean
+  /** Estado de `A1`/`A2` (XOR/OR) no momento em que o elemento foi declarado (guia A6). */
+  logicMode?: 1 | 2
 }
 
 export interface PplaText extends PplaElement {

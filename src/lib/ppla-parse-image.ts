@@ -733,7 +733,7 @@ export function parsePplaCode(
     if (result.element) {
       elements.push(
         applyLabelFormatShifts(
-          result.element,
+          { ...result.element, mirror: label.mirror, logicMode: label.logicMode },
           label,
           printerDpi,
         ),
