@@ -3,6 +3,7 @@ import type {
   AnyPplaElement,
   PplaBarcode,
   PplaBox,
+  PplaElementFormatShift,
   PplaGraphic,
   PplaLine,
   PplaLabelState,
@@ -543,20 +544,27 @@ function tryConsumePplaStateCommand(
   return false
 }
 
-function applyLabelFormatShifts(
-  el: AnyPplaElement,
+function computeLabelFormatShift(
   s: PplaLabelState,
   printerDpi: number,
+): PplaElementFormatShift {
+  return {
+    dx: (s.formatLeftMarginHundredths / 100) * printerDpi,
+    dy: (s.formatVerticalOffsetHundredths / 100) * printerDpi,
+  }
+}
+
+function applyLabelFormatShifts(
+  el: AnyPplaElement,
+  shift: PplaElementFormatShift,
 ): AnyPplaElement {
-  if (s.formatLeftMarginHundredths === 0 && s.formatVerticalOffsetHundredths === 0) {
+  if (shift.dx === 0 && shift.dy === 0) {
     return el
   }
-  const dx = (s.formatLeftMarginHundredths / 100) * printerDpi
-  const dy = (s.formatVerticalOffsetHundredths / 100) * printerDpi
   return {
     ...el,
-    x: el.x + dx,
-    y: el.y + dy,
+    x: el.x + shift.dx,
+    y: el.y + shift.dy,
   }
 }
 
@@ -736,6 +744,8 @@ export function parsePplaCode(
   const label = createEmptyPplaLabelState()
   const elements: AnyPplaElement[] = []
   const diagnostics: PplaParseDiagnostic[] = []
+  const elementSourceLines: number[] = []
+  const elementFormatShifts: PplaElementFormatShift[] = []
   const printerDpi = options.printerDpi ?? DEFAULT_PRINTER_DPI
 
   let inLabel = false
@@ -781,13 +791,15 @@ export function parsePplaCode(
 
     const result = parsePplaElementLine(rawLine, index + 1)
     if (result.element) {
+      const shift = computeLabelFormatShift(label, printerDpi)
       elements.push(
         applyLabelFormatShifts(
           { ...result.element, mirror: label.mirror, logicMode: label.logicMode },
-          label,
-          printerDpi,
+          shift,
         ),
       )
+      elementSourceLines.push(index)
+      elementFormatShifts.push(shift)
     }
     if (result.diagnostic) {
       diagnostics.push(result.diagnostic)
@@ -795,7 +807,7 @@ export function parsePplaCode(
   }
 
   finalizeLabelState(label)
-  return { label, elements, diagnostics }
+  return { label, elements, diagnostics, elementSourceLines, elementFormatShifts }
 }
 
 export function parsePplaLabelPreamble(pplaCode: string): PplaLabelPreamble {

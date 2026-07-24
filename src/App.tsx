@@ -1,16 +1,16 @@
 import { Copy, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
-import { estimateCoordinateDpiFromPplaCode } from '@/lib/ppla-engine'
 import {
   DEFAULT_LABEL_HEIGHT_MM,
   DEFAULT_LABEL_WIDTH_MM,
   DEFAULT_PREVIEW_SCREEN_SCALE,
   DEFAULT_PRINTER_DPI,
 } from '@/lib/label-units'
+import { useLabelDocument } from '@/hooks/useLabelDocument'
 import { Toolbar } from './components/Toolbar'
 import { LayersPanel } from './components/LayersPanel'
-import { Canvas } from './components/Canvas'
+import { Canvas, type CanvasTool } from './components/Canvas'
 import { PropertiesPanel } from './components/PropertiesPanel'
 
 const INITIAL_PPLA_CODE = `121100001000000MyLabelDesign
@@ -30,20 +30,18 @@ function clampLabelMm(value: number, fallback: number): number {
 
 function App() {
   const [isPplaPanelOpen, setIsPplaPanelOpen] = useState(false)
-  const [pplaCode, setPplaCode] = useState(INITIAL_PPLA_CODE)
   const [labelWidthMm, setLabelWidthMm] = useState(DEFAULT_LABEL_WIDTH_MM)
   const [labelHeightMm, setLabelHeightMm] = useState(DEFAULT_LABEL_HEIGHT_MM)
   const [printerDpi, setPrinterDpi] = useState(DEFAULT_PRINTER_DPI)
+  const [activeTool, setActiveTool] = useState<CanvasTool>('select')
 
-  const layoutDpi = useMemo(
-    () => estimateCoordinateDpiFromPplaCode(pplaCode) ?? printerDpi,
-    [pplaCode, printerDpi],
-  )
+  const doc = useLabelDocument(INITIAL_PPLA_CODE, { fallbackPrinterDpi: printerDpi })
+
   const [pplaPanelWidth, setPplaPanelWidth] = useState(DEFAULT_PPLA_PANEL_WIDTH)
   const [isResizingPplaPanel, setIsResizingPplaPanel] = useState(false)
   const lineNumbers = useMemo(() => {
-    return pplaCode.split('\n').map((_, index) => index + 1)
-  }, [pplaCode])
+    return doc.code.split('\n').map((_, index) => index + 1)
+  }, [doc.code])
 
   useEffect(() => {
     if (!isResizingPplaPanel) {
@@ -79,27 +77,55 @@ function App() {
         onTogglePplaCode={() => {
           setIsPplaPanelOpen(open => !open)
         }}
+        activeTool={activeTool}
+        onToolChange={setActiveTool}
+        onUndo={doc.undo}
+        onRedo={doc.redo}
+        canUndo={doc.canUndo}
+        canRedo={doc.canRedo}
       />
       <div className="flex flex-1 overflow-hidden">
-        <LayersPanel />
+        <LayersPanel
+          elements={doc.elements}
+          selectedIndex={doc.selectedIndex}
+          onSelect={doc.setSelectedIndex}
+          onDelete={doc.deleteElement}
+        />
         <Canvas
-          pplaCode={pplaCode}
+          elements={doc.elements}
           labelWidthMm={labelWidthMm}
           labelHeightMm={labelHeightMm}
-          coordinateDpi={layoutDpi}
+          coordinateDpi={doc.coordinateDpi}
           previewScreenScale={DEFAULT_PREVIEW_SCREEN_SCALE}
+          selectedIndex={doc.selectedIndex}
+          onSelect={doc.setSelectedIndex}
+          onUpdateElement={doc.updateElement}
+          activeTool={activeTool}
+          onCreateElement={doc.addElement}
+          onToolUsed={() => setActiveTool('select')}
         />
         <PropertiesPanel
           labelWidthMm={labelWidthMm}
           labelHeightMm={labelHeightMm}
           printerDpi={printerDpi}
-          layoutDpi={layoutDpi}
+          layoutDpi={doc.coordinateDpi}
           previewScreenScale={DEFAULT_PREVIEW_SCREEN_SCALE}
           onPrinterDpiChange={setPrinterDpi}
           onApplyLabelSizeMm={(widthMm, heightMm) => {
             setLabelWidthMm(clampLabelMm(widthMm, DEFAULT_LABEL_WIDTH_MM))
             setLabelHeightMm(clampLabelMm(heightMm, DEFAULT_LABEL_HEIGHT_MM))
           }}
+          selectedElement={doc.selectedElement}
+          onUpdateElement={
+            doc.selectedIndex !== null
+              ? patch => doc.updateElement(doc.selectedIndex!, patch)
+              : undefined
+          }
+          onDeleteElement={
+            doc.selectedIndex !== null
+              ? () => doc.deleteElement(doc.selectedIndex!)
+              : undefined
+          }
         />
       </div>
 
@@ -135,7 +161,7 @@ function App() {
                 type="button"
                 className="flex items-center gap-1.5 rounded-md border border-[#334155] bg-[#111827] px-2.5 py-1.5 text-[11px] text-[#cbd5e1] transition-colors hover:bg-[#1e293b]"
                 onClick={() => {
-                  void navigator.clipboard.writeText(pplaCode)
+                  void navigator.clipboard.writeText(doc.code)
                 }}
               >
                 <Copy size={13} />
@@ -161,8 +187,8 @@ function App() {
             </div>
 
             <textarea
-              value={pplaCode}
-              onChange={event => setPplaCode(event.target.value)}
+              value={doc.code}
+              onChange={event => doc.setCode(event.target.value)}
               className="h-full flex-1 resize-none bg-transparent px-4 py-3 leading-5 text-[#e2e8f0] outline-none caret-[#60a5fa] border-none"
               spellCheck={false}
               wrap="off"
@@ -175,4 +201,3 @@ function App() {
 }
 
 export default App
-

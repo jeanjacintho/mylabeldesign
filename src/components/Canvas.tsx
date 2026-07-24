@@ -4,148 +4,161 @@ import {
   DEFAULT_PREVIEW_SCREEN_SCALE,
   labelMmToPreviewPx,
 } from '@/lib/label-units'
+import type { AnyPplaElement, PplaElementKind } from '@/lib/ppla-model'
+import { getPplaElementVerticalExtentDots } from '@/lib/ppla-layout'
 import {
-  parsePplaLabelPreamble,
-  PplaParserService,
-  PplaRendererService,
-  printStartOffsetDotsX,
-  shiftPplaElements,
-  verticalPrintOffsetDotsY,
-} from '@/lib/ppla-engine'
+  snapToNearestScaleMultiplier,
+  stagePositionToElementXY,
+  stagePxToDots,
+} from '@/lib/ppla-coords'
+import { PplaElementShape } from '@/components/konva/PplaElementShape'
 import { cn } from '@/lib/utils'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type Konva from 'konva'
+import { Layer, Rect, Stage, Transformer } from 'react-konva'
+
+export type CanvasTool = 'select' | 'text' | 'box' | 'line'
 
 interface CanvasProps {
-  pplaCode: string
+  elements: AnyPplaElement[]
   labelWidthMm: number
   labelHeightMm: number
   /** DPI efetivo: Dwh do PPLA quando existir, senão o DPI escolhido na UI. */
   coordinateDpi: number
   previewScreenScale?: number
+  selectedIndex: number | null
+  onSelect: (index: number | null) => void
+  onUpdateElement: (index: number, patch: Partial<AnyPplaElement>) => void
+  activeTool: CanvasTool
+  onCreateElement: (kind: PplaElementKind, xDots: number, yDots: number) => void
+  onToolUsed: () => void
+}
+
+/** Tipos cujo redimensionamento tem um campo PPLA real por trás (largura/altura de
+ * texto = multiplicadores; box/line = width/height diretos). Barcode/graphic ficam só
+ * com arrastar+rotacionar por ora — a "largura" deles no preview é aproximada, não um
+ * campo do PPLA que dê pra escrever de volta. */
+function isResizable(kind: AnyPplaElement['type']): boolean {
+  return kind === 'text' || kind === 'box' || kind === 'line'
 }
 
 export function Canvas({
-  pplaCode,
+  elements,
   labelWidthMm = DEFAULT_LABEL_WIDTH_MM,
   labelHeightMm = DEFAULT_LABEL_HEIGHT_MM,
   coordinateDpi,
   previewScreenScale = DEFAULT_PREVIEW_SCREEN_SCALE,
+  selectedIndex,
+  onSelect,
+  onUpdateElement,
+  activeTool,
+  onCreateElement,
+  onToolUsed,
 }: CanvasProps) {
-
-  const parser = useMemo(() => {
-    return new PplaParserService({
-      normalizeLineEndings: true,
-      printerDpi: coordinateDpi,
-    })
-  }, [coordinateDpi])
-
-  const pplaParse = useMemo(() => {
-    return parser.parseWithDiagnostics(pplaCode)
-  }, [parser, pplaCode])
-  const parsedElements = pplaParse.elements
-  const pplaLabelState = pplaParse.label
-
-  const labelPreamble = useMemo(() => {
-    return parsePplaLabelPreamble(pplaCode)
-  }, [pplaCode])
-
-  const printStartShiftXDots = useMemo(() => {
-    return printStartOffsetDotsX(labelPreamble, coordinateDpi)
-  }, [coordinateDpi, labelPreamble])
-
-  const verticalPrintShiftYDots = useMemo(() => {
-    return verticalPrintOffsetDotsY(labelPreamble, coordinateDpi)
-  }, [coordinateDpi, labelPreamble])
-
-  const layoutElements = useMemo(() => {
-    return shiftPplaElements(
-      parsedElements,
-      printStartShiftXDots,
-      verticalPrintShiftYDots,
-    )
-  }, [parsedElements, printStartShiftXDots, verticalPrintShiftYDots])
-
-  /**
-   * A impressora física NUNCA estica a etiqueta pra caber conteúdo: a largura é fixa pelo
-   * cabeçote, e a altura só cresce em modo contínuo por comando explícito do próprio PPLA
-   * (guia A5, `<STX>c`). O tamanho aqui é o que o usuário define no painel de propriedades —
-   * conteúdo que ultrapassa esses limites deve aparecer cortado no preview, igual à impressora
-   * real, em vez do canvas crescer sozinho e ignorar o valor escolhido.
-   */
-  const effectiveLabelWidthMm = labelWidthMm
-  const effectiveLabelHeightMm = labelHeightMm
-
   const labelWidthPx = useMemo(
-    () =>
-      labelMmToPreviewPx(
-        effectiveLabelWidthMm,
-        coordinateDpi,
-        previewScreenScale,
-      ),
-    [coordinateDpi, effectiveLabelWidthMm, previewScreenScale],
+    () => labelMmToPreviewPx(labelWidthMm, coordinateDpi, previewScreenScale),
+    [coordinateDpi, labelWidthMm, previewScreenScale],
   )
   const labelHeightPx = useMemo(
-    () =>
-      labelMmToPreviewPx(
-        effectiveLabelHeightMm,
-        coordinateDpi,
-        previewScreenScale,
-      ),
-    [coordinateDpi, effectiveLabelHeightMm, previewScreenScale],
+    () => labelMmToPreviewPx(labelHeightMm, coordinateDpi, previewScreenScale),
+    [coordinateDpi, labelHeightMm, previewScreenScale],
   )
 
-  const canvasContainerRef = useRef<HTMLDivElement>(null)
-  const canvasElementRef = useRef<HTMLCanvasElement>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [zoom] = useState(1)
-  const renderer = useMemo(() => {
-    return new PplaRendererService({
-      dpi: coordinateDpi,
-      scaleFactor: previewScreenScale,
-    })
-  }, [coordinateDpi, previewScreenScale])
+  const shapeNodes = useRef(new Map<number, Konva.Node>())
+  const transformerRef = useRef<Konva.Transformer>(null)
+  const selectedElement = selectedIndex !== null ? elements[selectedIndex] : undefined
 
-  useLayoutEffect(() => {
-    const canvas = canvasElementRef.current
-    if (!canvas) {
+  useEffect(() => {
+    const transformer = transformerRef.current
+    if (!transformer) return
+    if (selectedIndex === null) {
+      transformer.nodes([])
+      transformer.getLayer()?.batchDraw()
+      return
+    }
+    const node = shapeNodes.current.get(selectedIndex)
+    transformer.nodes(node ? [node] : [])
+    transformer.getLayer()?.batchDraw()
+  }, [selectedIndex, elements])
+
+  function handleStageMouseDown(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) {
+    const clickedOnEmpty = e.target === e.target.getStage()
+    if (!clickedOnEmpty) {
       return
     }
 
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
+    if (activeTool === 'select') {
+      onSelect(null)
       return
     }
 
-    const devicePixelRatio = window.devicePixelRatio || 1
-    const logicalWidthPx = Math.max(1, Math.floor(labelWidthPx))
-    const logicalHeightPx = Math.max(1, Math.floor(labelHeightPx))
-    canvas.width = Math.floor(logicalWidthPx * devicePixelRatio)
-    canvas.height = Math.floor(logicalHeightPx * devicePixelRatio)
-    canvas.style.width = `${logicalWidthPx}px`
-    canvas.style.height = `${logicalHeightPx}px`
+    const stage = e.target.getStage()
+    const pointer = stage?.getPointerPosition()
+    if (!pointer) return
 
-    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
-    ctx.clearRect(0, 0, logicalWidthPx, logicalHeightPx)
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, logicalWidthPx, logicalHeightPx)
-    ctx.fillStyle = '#111827'
+    const kind: PplaElementKind = activeTool
+    const xDots = stagePxToDots(pointer.x, coordinateDpi, previewScreenScale)
+    const yDots = stagePxToDots(labelHeightPx - pointer.y, coordinateDpi, previewScreenScale)
+    onCreateElement(kind, xDots, yDots)
+    onToolUsed()
+  }
 
-    renderer.render(layoutElements, ctx, {
-      canvasHeightPx: logicalHeightPx,
-      labelState: pplaLabelState,
-    })
-  }, [labelHeightPx, labelWidthPx, layoutElements, pplaLabelState, renderer])
+  function handleDragEnd(index: number, node: Konva.Node) {
+    const element = elements[index]
+    if (!element) return
+    const verticalExtentDots = getPplaElementVerticalExtentDots(element)
+    const xy = stagePositionToElementXY(
+      node.x(), node.y(), verticalExtentDots, labelHeightPx, coordinateDpi, previewScreenScale,
+    )
+    onUpdateElement(index, { x: xy.x, y: xy.y })
+  }
+
+  function handleTransformEnd(index: number, node: Konva.Node) {
+    const element = elements[index]
+    if (!element) return
+
+    const rotation = (((Math.round(node.rotation() / 90) * 90) % 360) + 360) % 360 as 0 | 90 | 180 | 270
+    const scaleX = node.scaleX()
+    const scaleY = node.scaleY()
+
+    let patch: Partial<AnyPplaElement> = { rotation }
+
+    if (element.type === 'text') {
+      patch = {
+        ...patch,
+        widthMultiplier: snapToNearestScaleMultiplier(element.widthMultiplier * Math.abs(scaleX)),
+        heightMultiplier: snapToNearestScaleMultiplier(element.heightMultiplier * scaleY),
+      }
+    } else if (element.type === 'box' || element.type === 'line') {
+      const newWidthPx = node.width() * scaleX
+      const newHeightPx = node.height() * scaleY
+      patch = {
+        ...patch,
+        width: Math.max(1, Math.round(stagePxToDots(newWidthPx, coordinateDpi, previewScreenScale))),
+        height: Math.max(1, Math.round(stagePxToDots(newHeightPx, coordinateDpi, previewScreenScale))),
+      }
+      node.scaleX(1)
+      node.scaleY(1)
+    }
+
+    const merged = { ...element, ...patch } as AnyPplaElement
+    const verticalExtentDots = getPplaElementVerticalExtentDots(merged)
+    const xy = stagePositionToElementXY(
+      node.x(), node.y(), verticalExtentDots, labelHeightPx, coordinateDpi, previewScreenScale,
+    )
+
+    onUpdateElement(index, { ...patch, x: xy.x, y: xy.y })
+  }
 
   return (
     <div
-      ref={canvasContainerRef}
       className="flex-1 relative overflow-hidden bg-[#1a1a1a]"
       style={{
         backgroundImage:
           'radial-gradient(circle, #3a3a3a 1px, transparent 1px)',
         backgroundSize: '24px 24px',
       }}
-      onClick={() => setSelectedId(null)}
     >
       {/* Rulers - top */}
       <div className="absolute top-0 left-8 right-0 h-6 bg-[#252525] border-b border-[#3a3a3a] z-10 overflow-hidden">
@@ -155,22 +168,9 @@ export function Canvas({
             const isMajor = i % 2 === 0
             return (
               <g key={i}>
-                <line
-                  x1={x}
-                  y1={isMajor ? 12 : 16}
-                  x2={x}
-                  y2={24}
-                  stroke="#555"
-                  strokeWidth="1"
-                />
+                <line x1={x} y1={isMajor ? 12 : 16} x2={x} y2={24} stroke="#555" strokeWidth="1" />
                 {isMajor && (
-                  <text
-                    x={x + 3}
-                    y={10}
-                    fontSize="9"
-                    fill="#666"
-                    fontFamily="monospace"
-                  >
+                  <text x={x + 3} y={10} fontSize="9" fill="#666" fontFamily="monospace">
                     {(i - 14) * 50}
                   </text>
                 )}
@@ -188,21 +188,10 @@ export function Canvas({
             const isMajor = i % 2 === 0
             return (
               <g key={i}>
-                <line
-                  x1={isMajor ? 12 : 16}
-                  y1={y}
-                  x2={32}
-                  y2={y}
-                  stroke="#555"
-                  strokeWidth="1"
-                />
+                <line x1={isMajor ? 12 : 16} y1={y} x2={32} y2={y} stroke="#555" strokeWidth="1" />
                 {isMajor && (
                   <text
-                    x={10}
-                    y={y + 3}
-                    fontSize="9"
-                    fill="#666"
-                    fontFamily="monospace"
+                    x={10} y={y + 3} fontSize="9" fill="#666" fontFamily="monospace"
                     transform={`rotate(-90, 10, ${y + 3})`}
                   >
                     {(i - 6) * 50}
@@ -219,50 +208,66 @@ export function Canvas({
         className="absolute inset-0 flex items-center justify-center"
         style={{ top: '24px', left: '32px' }}
       >
-        <div
-          className="relative"
-          style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }}
-        >
-          {/* Label canvas label */}
+        <div className="relative" style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }}>
           <div className="absolute -top-6 left-0 text-xs text-[#666] whitespace-nowrap">
             Frame 1
           </div>
 
-          {/* Label outer frame */}
           <div
             className="relative bg-[#f5f5f5] shadow-2xl"
-            style={{
-              width: labelWidthPx + 16,
-              height: labelHeightPx + 16,
-            }}
+            style={{ width: labelWidthPx + 16, height: labelHeightPx + 16 }}
           >
-            {/* "Frame 2" - label render surface */}
             <div
               className={cn(
                 'absolute border-2 bg-white',
-                selectedId === 'frame-2'
-                  ? 'border-[#1971c2]'
-                  : 'border-[#ff6b6b]',
+                selectedIndex !== null ? 'border-[#1971c2]' : 'border-[#ff6b6b]',
               )}
-              style={{
-                left: 8,
-                top: 8,
-                width: labelWidthPx,
-                height: labelHeightPx,
-              }}
-              onClick={e => {
-                e.stopPropagation()
-                setSelectedId('frame-2')
-              }}
+              style={{ left: 8, top: 8, width: labelWidthPx, height: labelHeightPx }}
             >
               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[#1971c2] text-white text-[10px] px-2 py-0.5 rounded whitespace-nowrap">
                 PPLA Preview
               </div>
 
-              <canvas
-                ref={canvasElementRef}
-                className="block h-full w-full bg-white"
-              />
+              <Stage
+                width={Math.max(1, Math.floor(labelWidthPx))}
+                height={Math.max(1, Math.floor(labelHeightPx))}
+                onMouseDown={handleStageMouseDown}
+                onTouchStart={handleStageMouseDown}
+              >
+                <Layer>
+                  <Rect
+                    x={0} y={0}
+                    width={Math.max(1, Math.floor(labelWidthPx))}
+                    height={Math.max(1, Math.floor(labelHeightPx))}
+                    fill="#ffffff"
+                  />
+                  {elements.map((element, index) => (
+                    <PplaElementShape
+                      key={index}
+                      element={element}
+                      index={index}
+                      canvasHeightPx={labelHeightPx}
+                      dpi={coordinateDpi}
+                      scale={previewScreenScale}
+                      isSelected={selectedIndex === index}
+                      draggable={activeTool === 'select'}
+                      onSelect={onSelect}
+                      onDragEnd={handleDragEnd}
+                      onTransformEnd={handleTransformEnd}
+                      shapeRef={(i, node) => {
+                        if (node) shapeNodes.current.set(i, node)
+                        else shapeNodes.current.delete(i)
+                      }}
+                    />
+                  ))}
+                  <Transformer
+                    ref={transformerRef}
+                    rotationSnaps={[0, 90, 180, 270]}
+                    resizeEnabled={selectedElement !== undefined && isResizable(selectedElement.type)}
+                    rotateEnabled
+                  />
+                </Layer>
+              </Stage>
             </div>
           </div>
         </div>

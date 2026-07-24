@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   COMMON_PRINTER_DPIS,
   labelMmToPreviewPx,
 } from '@/lib/label-units'
 import { cn } from '@/lib/utils'
+import type { AnyPplaElement, PplaRotation } from '@/lib/ppla-model'
 import {
   AlignStartVertical,
   AlignCenterVertical,
@@ -18,6 +19,7 @@ import {
   Minus,
   Plus,
   Eye,
+  Trash2,
 } from 'lucide-react'
 
 type RightTab = 'design' | 'prototype' | 'inspect'
@@ -44,9 +46,10 @@ interface InputRowProps {
   prefix?: React.ReactNode
   onChange?: (v: string) => void
   className?: string
+  inputProps?: React.InputHTMLAttributes<HTMLInputElement>
 }
 
-function InputField({ label, value, prefix, onChange, className }: InputRowProps) {
+function InputField({ label, value, prefix, onChange, className, inputProps }: InputRowProps) {
   return (
     <div className={cn('flex items-center gap-1.5', className)}>
       <span className="text-[10px] text-[#666] w-3 shrink-0">{label}</span>
@@ -56,6 +59,7 @@ function InputField({ label, value, prefix, onChange, className }: InputRowProps
           className="flex-1 bg-transparent text-xs text-[#ccc] outline-none w-0"
           value={value}
           onChange={e => onChange?.(e.target.value)}
+          {...inputProps}
         />
       </div>
     </div>
@@ -86,6 +90,203 @@ interface PropertiesPanelProps {
   previewScreenScale: number
   onPrinterDpiChange: (dpi: number) => void
   onApplyLabelSizeMm: (widthMm: number, heightMm: number) => void
+  selectedElement?: AnyPplaElement | null
+  onUpdateElement?: (patch: Partial<AnyPplaElement>) => void
+  onDeleteElement?: () => void
+}
+
+interface NumberFieldProps {
+  label: string
+  value: number
+  onCommit: (value: number) => void
+  min?: number
+  max?: number
+}
+
+/** Campo numérico com rascunho local, comita só ao sair do campo (Enter/blur) — evita
+ * empilhar uma entrada de undo por tecla digitada. */
+function NumberField({ label, value, onCommit, min, max }: NumberFieldProps) {
+  const [draft, setDraft] = useState(String(value))
+  const [prevValue, setPrevValue] = useState(value)
+  if (value !== prevValue) {
+    setPrevValue(value)
+    setDraft(String(value))
+  }
+
+  function commit() {
+    const n = Number.parseFloat(draft.trim().replace(',', '.'))
+    if (Number.isFinite(n)) {
+      const clamped = Math.max(min ?? -Infinity, Math.min(max ?? Infinity, n))
+      onCommit(clamped)
+    } else {
+      setDraft(String(value))
+    }
+  }
+
+  return (
+    <InputField
+      label={label}
+      value={draft}
+      onChange={setDraft}
+      className="[&_input]:cursor-text"
+      inputProps={{
+        onBlur: commit,
+        onKeyDown: e => {
+          if (e.key === 'Enter') {
+            e.currentTarget.blur()
+          }
+        },
+      }}
+    />
+  )
+}
+
+const ROTATIONS: PplaRotation[] = [0, 90, 180, 270]
+
+function ElementFields({
+  element,
+  onUpdateElement,
+}: {
+  element: AnyPplaElement
+  onUpdateElement: (patch: Partial<AnyPplaElement>) => void
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-2 gap-2">
+        <NumberField label="X" value={element.x} onCommit={x => onUpdateElement({ x })} min={0} />
+        <NumberField label="Y" value={element.y} onCommit={y => onUpdateElement({ y })} min={0} />
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-[#666] w-3 shrink-0">↻</span>
+        <select
+          className="flex-1 h-6 rounded border border-[#3a3a3a] bg-[#1a1a1a] px-2 text-xs text-[#ccc] outline-none focus:border-[#1971c2]"
+          value={element.rotation}
+          onChange={e => onUpdateElement({ rotation: Number(e.target.value) as PplaRotation })}
+        >
+          {ROTATIONS.map(r => (
+            <option key={r} value={r}>{r}°</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="element-mirror"
+          className="w-3.5 h-3.5 accent-[#1971c2]"
+          checked={Boolean(element.mirror)}
+          onChange={e => onUpdateElement({ mirror: e.target.checked })}
+        />
+        <label htmlFor="element-mirror" className="text-[11px] text-[#888] cursor-pointer">
+          Espelhado (M)
+        </label>
+      </div>
+
+      {element.type === 'text' && (
+        <>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-[#666] w-3 shrink-0">Tx</span>
+            <input
+              className="flex-1 h-6 rounded border border-[#3a3a3a] bg-[#1a1a1a] px-2 text-xs text-[#ccc] outline-none focus:border-[#1971c2]"
+              value={element.text}
+              onChange={e => onUpdateElement({ text: e.target.value })}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField
+              label="H"
+              value={element.widthMultiplier}
+              onCommit={widthMultiplier => onUpdateElement({ widthMultiplier })}
+              min={1} max={24}
+            />
+            <NumberField
+              label="V"
+              value={element.heightMultiplier}
+              onCommit={heightMultiplier => onUpdateElement({ heightMultiplier })}
+              min={1} max={24}
+            />
+          </div>
+        </>
+      )}
+
+      {element.type === 'barcode' && (
+        <>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-[#666] w-3 shrink-0">Dado</span>
+            <input
+              className="flex-1 h-6 rounded border border-[#3a3a3a] bg-[#1a1a1a] px-2 text-xs text-[#ccc] outline-none focus:border-[#1971c2]"
+              value={element.data}
+              onChange={e => onUpdateElement({ data: e.target.value })}
+            />
+          </div>
+          <NumberField
+            label="H"
+            value={element.height}
+            onCommit={height => onUpdateElement({ height })}
+            min={1}
+          />
+        </>
+      )}
+
+      {element.type === 'box' && (
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="W"
+            value={element.width}
+            onCommit={width => onUpdateElement({ width })}
+            min={1}
+          />
+          <NumberField
+            label="H"
+            value={element.height}
+            onCommit={height => onUpdateElement({ height })}
+            min={1}
+          />
+          <NumberField
+            label="TB"
+            value={element.thicknessTopBottom}
+            onCommit={thicknessTopBottom => onUpdateElement({ thicknessTopBottom })}
+            min={1}
+          />
+          <NumberField
+            label="Lat"
+            value={element.thicknessSides}
+            onCommit={thicknessSides => onUpdateElement({ thicknessSides })}
+            min={1}
+          />
+        </div>
+      )}
+
+      {element.type === 'line' && (
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="W"
+            value={element.width}
+            onCommit={width => onUpdateElement({ width })}
+            min={1}
+          />
+          <NumberField
+            label="H"
+            value={element.height}
+            onCommit={height => onUpdateElement({ height })}
+            min={1}
+          />
+        </div>
+      )}
+
+      {element.type === 'graphic' && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-[#666] w-3 shrink-0">Nome</span>
+          <input
+            className="flex-1 h-6 rounded border border-[#3a3a3a] bg-[#1a1a1a] px-2 text-xs text-[#ccc] outline-none focus:border-[#1971c2]"
+            value={element.name}
+            onChange={e => onUpdateElement({ name: e.target.value })}
+          />
+        </div>
+      )}
+    </div>
+  )
 }
 
 function parseMmInput(raw: string): number | null {
@@ -108,18 +309,24 @@ export function PropertiesPanel({
   previewScreenScale,
   onPrinterDpiChange,
   onApplyLabelSizeMm,
+  selectedElement,
+  onUpdateElement,
+  onDeleteElement,
 }: PropertiesPanelProps) {
   const [activeTab, setActiveTab] = useState<RightTab>('design')
   const [draftWidthMm, setDraftWidthMm] = useState(String(labelWidthMm))
   const [draftHeightMm, setDraftHeightMm] = useState(String(labelHeightMm))
+  const [prevLabelWidthMm, setPrevLabelWidthMm] = useState(labelWidthMm)
+  const [prevLabelHeightMm, setPrevLabelHeightMm] = useState(labelHeightMm)
 
-  useEffect(() => {
+  if (labelWidthMm !== prevLabelWidthMm) {
+    setPrevLabelWidthMm(labelWidthMm)
     setDraftWidthMm(String(labelWidthMm))
-  }, [labelWidthMm])
-
-  useEffect(() => {
+  }
+  if (labelHeightMm !== prevLabelHeightMm) {
+    setPrevLabelHeightMm(labelHeightMm)
     setDraftHeightMm(String(labelHeightMm))
-  }, [labelHeightMm])
+  }
 
   const draftPreviewHint = useMemo(() => {
     const w = parseMmInput(draftWidthMm)
@@ -133,12 +340,6 @@ export function PropertiesPanel({
     }
   }, [draftHeightMm, draftWidthMm, layoutDpi, previewScreenScale])
 
-  const [x, setX] = useState('171')
-  const [y, setY] = useState('285')
-  const [w] = useState('1578')
-  const [h] = useState('509')
-  const [rotation] = useState('0')
-  const [cornerRadius] = useState('0')
   const [opacity] = useState('100')
   const [autoLayoutGap] = useState('75')
   const [paddingH] = useState('100')
@@ -243,56 +444,28 @@ export function PropertiesPanel({
 
             <Divider />
 
-            {/* Frame section */}
+            {/* Elemento selecionado — dados reais do PPLA, não decorativo */}
             <div className="px-3 py-2">
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1 text-[#ccc] font-semibold">
-                  <span>Frame</span>
-                  <ChevronRight size={12} className="text-[#666]" />
-                </div>
-                <button className="text-[#666] hover:text-white">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-                  </svg>
-                </button>
+                <span className="text-[#ccc] font-semibold">Elemento</span>
+                {selectedElement && onDeleteElement && (
+                  <button
+                    className="text-[#666] hover:text-[#ff6b6b] transition-colors"
+                    onClick={onDeleteElement}
+                    title="Excluir elemento"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </div>
 
-              {/* X / Y */}
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                <InputField label="X" value={x} onChange={setX} />
-                <InputField label="Y" value={y} onChange={setY} />
-              </div>
-              {/* W / H */}
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                <InputField label="W" value={w} />
-                <InputField label="H" value={h} />
-              </div>
-
-              {/* Hug dropdowns */}
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                <div className="flex items-center bg-[#1a1a1a] border border-[#3a3a3a] rounded h-6 px-2 gap-1 cursor-pointer">
-                  <ChevronRight size={10} className="text-[#555]" />
-                  <span className="text-[11px] text-[#888]">Hug</span>
-                </div>
-                <div className="flex items-center bg-[#1a1a1a] border border-[#3a3a3a] rounded h-6 px-2 gap-1 cursor-pointer">
-                  <span className="text-[10px] text-[#555]">X</span>
-                  <span className="text-[11px] text-[#888]">Hug</span>
-                </div>
-              </div>
-
-              {/* Rotation / Corner radius */}
-              <div className="grid grid-cols-2 gap-2">
-                <InputField label="L" value={`${rotation}°`} />
-                <InputField label="⌒" value={cornerRadius} />
-              </div>
-
-              {/* Clip content */}
-              <div className="flex items-center gap-2 mt-2">
-                <input type="checkbox" id="clip-content" className="w-3.5 h-3.5 accent-[#1971c2]" />
-                <label htmlFor="clip-content" className="text-[11px] text-[#888] cursor-pointer">
-                  Clip content
-                </label>
-              </div>
+              {!selectedElement || !onUpdateElement ? (
+                <p className="text-[11px] text-[#555] italic">
+                  Nenhum elemento selecionado
+                </p>
+              ) : (
+                <ElementFields element={selectedElement} onUpdateElement={onUpdateElement} />
+              )}
             </div>
 
             <Divider />

@@ -142,10 +142,29 @@ export function createEmptyPplaLabelState(): PplaLabelState {
   }
 }
 
+/** Deslocamento de margem/offset (guia A6, `C`/`R` dentro do bloco) já somado ao x/y de um elemento. */
+export interface PplaElementFormatShift {
+  dx: number
+  dy: number
+}
+
 export interface PplaParseResult {
   label: PplaLabelState
   elements: AnyPplaElement[]
   diagnostics: PplaParseDiagnostic[]
+  /**
+   * Índice da linha de origem (0-based, no array de linhas já dividido) de cada item de
+   * `elements`, na mesma ordem. Usado pelo editor visual para substituir cirurgicamente
+   * só a linha daquele elemento, sem tocar no resto do código.
+   */
+  elementSourceLines: number[]
+  /**
+   * Shift de `C`/`R` (guia A6) exatamente como aplicado a cada elemento no momento em que
+   * foi lido — não dá pra reconstruir isso a partir do `label` final, porque `C`/`R` podem
+   * mudar várias vezes dentro do mesmo bloco. Precisa ser invertido ao reescrever a linha
+   * crua de um elemento editado visualmente.
+   */
+  elementFormatShifts: PplaElementFormatShift[]
 }
 
 /** Payload equivalente a `IText` do printer-ppla (addText). */

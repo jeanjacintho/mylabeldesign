@@ -13,33 +13,44 @@ import {
   SunMoon,
   Share2,
   Play,
-  ChevronDown,
+  Undo2,
+  Redo2,
   Minus,
   Plus,
 } from 'lucide-react'
 import { useState } from 'react'
+import type { CanvasTool } from '@/components/Canvas'
 
 interface ToolbarProps {
   onTogglePplaCode?: () => void
+  activeTool: CanvasTool
+  onToolChange: (tool: CanvasTool) => void
+  onUndo: () => void
+  onRedo: () => void
+  canUndo: boolean
+  canRedo: boolean
 }
 
 interface ToolButtonProps {
   icon: React.ReactNode
   label: string
   active?: boolean
+  disabled?: boolean
   onClick?: () => void
   className?: string
 }
 
-function ToolButton({ icon, label, active, onClick, className }: ToolButtonProps) {
+function ToolButton({ icon, label, active, disabled, onClick, className }: ToolButtonProps) {
   return (
     <button
       title={label}
       onClick={onClick}
+      disabled={disabled}
       className={cn(
         'flex items-center justify-center w-8 h-8 rounded-md transition-colors',
         'text-[#b3b3b3] hover:bg-white/10 hover:text-white',
         active && 'bg-[#1971c2] text-white hover:bg-[#1971c2]',
+        disabled && 'opacity-30 hover:bg-transparent hover:text-[#b3b3b3] cursor-not-allowed',
         className,
       )}
     >
@@ -48,19 +59,25 @@ function ToolButton({ icon, label, active, onClick, className }: ToolButtonProps
   )
 }
 
-type Tool =
-  | 'select'
-  | 'frame'
-  | 'rectangle'
-  | 'pen'
-  | 'text'
-  | 'scale'
-  | 'hand'
-  | 'comment'
+/** Ferramentas puramente decorativas (Figma-lookalike) — não têm efeito real no canvas PPLA. */
+type DecorativeTool = 'frame' | 'scale' | 'hand' | 'comment'
 
-export function Toolbar({ onTogglePplaCode }: ToolbarProps) {
-  const [activeTool, setActiveTool] = useState<Tool>('select')
+export function Toolbar({
+  onTogglePplaCode,
+  activeTool,
+  onToolChange,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+}: ToolbarProps) {
+  const [decorativeTool, setDecorativeTool] = useState<DecorativeTool | null>(null)
   const [zoom, setZoom] = useState(26)
+
+  function selectRealTool(tool: CanvasTool) {
+    setDecorativeTool(null)
+    onToolChange(tool)
+  }
 
   return (
     <header className="flex items-center h-12 bg-[#2c2c2c] border-b border-[#3a3a3a] px-2 gap-1 select-none shrink-0">
@@ -78,66 +95,71 @@ export function Toolbar({ onTogglePplaCode }: ToolbarProps) {
         icon={<MousePointer2 size={16} />}
         label="Select (V)"
         active={activeTool === 'select'}
-        onClick={() => setActiveTool('select')}
+        onClick={() => selectRealTool('select')}
       />
 
-      {/* Shape tools with dropdown indicator */}
-      <div className="relative flex items-center">
-        <ToolButton
-          icon={<Frame size={16} />}
-          label="Frame (F)"
-          active={activeTool === 'frame'}
-          onClick={() => setActiveTool('frame')}
-        />
-        <ChevronDown size={8} className="absolute -right-0.5 bottom-1 text-[#888] pointer-events-none" />
-      </div>
+      <ToolButton
+        icon={<Frame size={16} />}
+        label="Frame (F)"
+        active={decorativeTool === 'frame'}
+        onClick={() => setDecorativeTool('frame')}
+      />
 
-      <div className="relative flex items-center">
-        <ToolButton
-          icon={<Square size={16} />}
-          label="Rectangle (R)"
-          active={activeTool === 'rectangle'}
-          onClick={() => setActiveTool('rectangle')}
-        />
-        <ChevronDown size={8} className="absolute -right-0.5 bottom-1 text-[#888] pointer-events-none" />
-      </div>
+      <ToolButton
+        icon={<Square size={16} />}
+        label="Caixa (R)"
+        active={activeTool === 'box'}
+        onClick={() => selectRealTool('box')}
+      />
 
-      <div className="relative flex items-center">
-        <ToolButton
-          icon={<Pen size={16} />}
-          label="Pen (P)"
-          active={activeTool === 'pen'}
-          onClick={() => setActiveTool('pen')}
-        />
-        <ChevronDown size={8} className="absolute -right-0.5 bottom-1 text-[#888] pointer-events-none" />
-      </div>
+      <ToolButton
+        icon={<Pen size={16} />}
+        label="Linha (L)"
+        active={activeTool === 'line'}
+        onClick={() => selectRealTool('line')}
+      />
 
       <ToolButton
         icon={<Type size={16} />}
-        label="Text (T)"
+        label="Texto (T)"
         active={activeTool === 'text'}
-        onClick={() => setActiveTool('text')}
+        onClick={() => selectRealTool('text')}
       />
 
       <ToolButton
         icon={<Scale size={16} />}
         label="Scale (K)"
-        active={activeTool === 'scale'}
-        onClick={() => setActiveTool('scale')}
+        active={decorativeTool === 'scale'}
+        onClick={() => setDecorativeTool('scale')}
       />
 
       <ToolButton
         icon={<Hand size={16} />}
         label="Hand (H)"
-        active={activeTool === 'hand'}
-        onClick={() => setActiveTool('hand')}
+        active={decorativeTool === 'hand'}
+        onClick={() => setDecorativeTool('hand')}
       />
 
       <ToolButton
         icon={<MessageCircle size={16} />}
         label="Comment (C)"
-        active={activeTool === 'comment'}
-        onClick={() => setActiveTool('comment')}
+        active={decorativeTool === 'comment'}
+        onClick={() => setDecorativeTool('comment')}
+      />
+
+      <div className="w-px h-6 bg-[#3a3a3a] mx-1" />
+
+      <ToolButton
+        icon={<Undo2 size={16} />}
+        label="Desfazer (Ctrl+Z)"
+        disabled={!canUndo}
+        onClick={onUndo}
+      />
+      <ToolButton
+        icon={<Redo2 size={16} />}
+        label="Refazer (Ctrl+Shift+Z)"
+        disabled={!canRedo}
+        onClick={onRedo}
       />
 
       {/* Spacer */}
