@@ -98,6 +98,36 @@ describe('código de barras (guia A7, pág. 53)', () => {
   })
 })
 
+describe('DataMatrix / código de barras W (guia A10, pág. 84)', () => {
+  it('1W1c23000005000312000000000DATA MATRIX — header próprio, não o Rthvoooyyyyxxxx padrão', () => {
+    const { elements } = parsePplaCode('1W1c23000005000312000000000DATA MATRIX', { printerDpi: 203 })
+    expect(elements).toHaveLength(1)
+    const b = elements[0] as PplaBarcode
+    expect(b.type).toBe('barcode')
+    expect(b.barcodeType).toBe('W')
+    expect(b.y).toBe(50)
+    expect(b.x).toBe(31)
+    expect(b.wideBarScale).toBe(2)
+    expect(b.narrowBarScale).toBe(3)
+    expect(b.data).toBe('DATA MATRIX')
+  })
+
+  it('1W1d4400000310340https://... — etiqueta real (Lave Bem) sem o bloco opcional 2000/linhas/colunas', () => {
+    const { elements } = parsePplaCode(
+      '1W1d4400000310340https://lavebemlavanderia.com.br',
+      { printerDpi: 203 },
+    )
+    expect(elements).toHaveLength(1)
+    const b = elements[0] as PplaBarcode
+    expect(b.barcodeType).toBe('W')
+    expect(b.y).toBe(31)
+    expect(b.x).toBe(340)
+    expect(b.wideBarScale).toBe(4)
+    expect(b.narrowBarScale).toBe(4)
+    expect(b.data).toBe('https://lavebemlavanderia.com.br')
+  })
+})
+
 describe('emit ↔ parse texto', () => {
   it('round-trip A7 texto', () => {
     const el: PplaText = {

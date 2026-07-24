@@ -356,6 +356,46 @@ function tryParseLegacyBox(line: string): PplaBox | null {
   }
 }
 
+/**
+ * DataMatrix (código de barras 'W') não segue o header padrão Rthvoooyyyyxxxx — tem um
+ * layout próprio: R + 'W' + '1' (literal) + 1 char não documentado (varia entre exemplos
+ * reais — 'c' no guia A10 pág. 84, 'd' em etiquetas reais da Lave Bem — tratado como
+ * campo desconhecido/ignorado) + c(mult. horiz.) + d(mult. vert.) + '000' (literal) +
+ * yyyy + xxxx + opcionalmente '2000' (literal) + jjj (linhas) + kkk (colunas) + dados.
+ * O bloco '2000'+jjj+kkk é omitido em etiquetas reais quando linhas/colunas são automáticas.
+ * Confirmado byte-a-byte contra o exemplo do guia A10 (`1W1c23000005000312000000000DATA
+ * MATRIX` → mult=2,3; y=50; x=31) e uma etiqueta real da Lave Bem sem esse bloco opcional
+ * (`1W1d4400000310340https://...` → mult=4,4; y=31; x=340; dados=URL).
+ */
+function tryParseDataMatrixBarcode(line: string, rotation: PplaRotation): PplaBarcode | null {
+  const match = /^[1-4]W1.(.)(.)000(\d{4})(\d{4})(?:2000\d{3}\d{3})?/.exec(line)
+  if (!match) {
+    return null
+  }
+
+  const wideBarScale = parseScaleChar(match[1])
+  const narrowBarScale = parseScaleChar(match[2])
+  const y = Number(match[3])
+  const x = Number(match[4])
+  const data = line.slice(match[0].length)
+
+  if (Number.isNaN(x) || Number.isNaN(y)) {
+    return null
+  }
+
+  return {
+    type: 'barcode',
+    x,
+    y,
+    rotation,
+    barcodeType: 'W',
+    data,
+    height: BARCODE_DEFAULT_HEIGHT_DOTS,
+    wideBarScale,
+    narrowBarScale,
+  }
+}
+
 function tryParseGraphicReference(line: string): PplaGraphic | null {
   const match = /^1Y11000(\d{4})(\d{4})(.{1,16})$/.exec(line)
   if (!match) {
@@ -533,6 +573,13 @@ export function tryParseImageFormattingCommand(line: string): AnyPplaElement | n
   const graphic = tryParseGraphicReference(line)
   if (graphic) {
     return graphic
+  }
+
+  if (line[1] === 'W') {
+    const dataMatrix = tryParseDataMatrixBarcode(line, mapDirectionCharToRotation(r))
+    if (dataMatrix) {
+      return dataMatrix
+    }
   }
 
   if (line[1] === 'X') {
