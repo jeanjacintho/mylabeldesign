@@ -417,7 +417,7 @@ function tryConsumePplaStateCommand(
     return true
   }
 
-  const cM = /^c(\d{4})$/i.exec(line)
+  const cM = /^c(\d{4})$/.exec(line)
   if (cM) {
     s.continuousLabelMode = true
     const v = Number(cM[1])
@@ -474,7 +474,7 @@ function tryConsumePplaStateCommand(
     return true
   }
 
-  const cMargin = /^C(\d{4})$/i.exec(line)
+  const cMargin = /^C(\d{4})$/.exec(line)
   if (cMargin) {
     s.formatLeftMarginHundredths = Number(cMargin[1])
     return true

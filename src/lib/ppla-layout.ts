@@ -6,8 +6,13 @@ export const PPLA_GRAPHIC_PLACEHOLDER_WIDTH_DOTS = 64
 export const PPLA_GRAPHIC_PLACEHOLDER_HEIGHT_DOTS = 32
 
 /**
- * ooo: fontes 1–8 e : ; = altura em pixels (na grelha da impressora);
- * fonte 9 = índice 000–006 → pontos (4–18 pt) → dots @ DEFAULT_PRINTER_DPI.
+ * ooo NÃO é altura em pixels para fontes 0–8, ':' (Courier) ou ';' (font board) — manual A7/AD:
+ * fontes 0–8 usam ooo fixo em '000' (todos os exemplos A9/AB do manual confirmam), ':' usa ooo
+ * como seletor de symbol set (000–007) e ';' usa ooo como índice da fonte na ROM (AD, pág. 89).
+ * Essas fontes internas têm tamanho nativo fixo (não documentado neste manual), escalado só por
+ * h/v; usamos aqui um tamanho base único como aproximação razoável.
+ * Só a fonte '9' usa ooo como tamanho de verdade: índice 000–006 → pontos (4–18pt) → dots
+ * @DEFAULT_PRINTER_DPI, ou ID de fonte PCL (sem tamanho conhecido) para ooo fora dessa faixa.
  * @see docs/PPLA_Parser_Guide.md §6.4
  */
 export function getBaseFontHeightDots(fontType: string, subfont: string): number {
@@ -25,26 +30,13 @@ export function getBaseFontHeightDots(fontType: string, subfont: string): number
     }
   }
 
-  if (
-    (fontType >= '1' && fontType <= '8'
-      || fontType === '0'
-      || fontType === ':'
-      || fontType === ';')
-    && /^\d{3}$/.test(subfont)
-  ) {
-    const px = Number.parseInt(subfont, 10)
-    if (Number.isFinite(px)) {
-      return Math.max(1, Math.min(999, px))
-    }
-  }
-
   return DEFAULT
 }
 
 function roughTextCellDots(element: PplaText): { w: number; h: number } {
-  const cellH = getBaseFontHeightDots(element.fontId, element.subfont)
-    * Math.max(1, element.heightMultiplier)
-  const charStep = Math.max(8, cellH * 0.52)
+  const baseDots = getBaseFontHeightDots(element.fontId, element.subfont)
+  const cellH = baseDots * Math.max(1, element.heightMultiplier)
+  const charStep = Math.max(8, baseDots * 0.52)
   const w =
     Math.max(
       charStep,

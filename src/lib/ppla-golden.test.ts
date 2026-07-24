@@ -40,7 +40,7 @@ describe('PPLA guia 12.1 / 12.2', () => {
     expect(t.fontId).toBe('3')
     expect(t.widthMultiplier).toBe(3)
     expect(t.heightMultiplier).toBe(2)
-    expect(t.subfont).toBe('200')
+    expect(t.subfont).toBe('005')
     expect(t.y).toBe(230)
     expect(t.x).toBe(370)
     expect(t.rotation).toBe(mapDirectionCharToRotation('2'))
@@ -70,9 +70,10 @@ describe('PPLA guia 12.3 / round-trip', () => {
   })
 })
 
-describe('getBaseFontHeightDots (guia 6.4)', () => {
-  it('fonte 3 + ooo 200 → 200', () => {
-    expect(getBaseFontHeightDots('3', '200')).toBe(200)
+describe('getBaseFontHeightDots (guia A7/AD)', () => {
+  it('fontes 0-8: ooo não é altura (manual A9/AB usam sempre ooo=000) — cai no default fixo', () => {
+    expect(getBaseFontHeightDots('3', '200')).toBe(getBaseFontHeightDots('3', '000'))
+    expect(getBaseFontHeightDots('3', '005')).toBe(getBaseFontHeightDots('3', '000'))
   })
 
   it('fonte 9 + 003 → 10pt ≈ dots 203DPI', () => {
