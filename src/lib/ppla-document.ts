@@ -1,17 +1,19 @@
 /**
- * Edição cirúrgica de linha sobre o texto cru do PPLA — usada pelo editor visual pra
- * alterar/inserir/remover exatamente a linha de UM elemento, sem tocar em mais nada do
- * arquivo (preâmbulo, outros elementos, comandos de fornecedor desconhecidos como
- * `ySPM`/`qC`/`V0`). Índices de linha vêm de `elementSourceLines` (`ppla-parse-image.ts`),
- * que usa o mesmo split que `splitPplaLines` com `normalizeLineEndings: true`.
+ * Surgical line editing over the raw PPLA text — used by the visual editor to change,
+ * insert, or remove exactly ONE element's line, without touching anything else in the
+ * file (preamble, other elements, unknown vendor commands like `ySPM`/`qC`/`V0`). Line
+ * indices come from `elementSourceLines` (`ppla-parse-image.ts`), which uses the same
+ * split as `splitPplaLines` with `normalizeLineEndings: true`.
  */
 
 import type { AnyPplaElement, PplaElementKind } from '@/lib/ppla-model'
 
+/** Splits code into lines using the same line-ending rule as the parser's normalized mode. */
 function splitLines(code: string): string[] {
   return code.split(/\r\n|\r|\n/)
 }
 
+/** Throws a `RangeError` if `lineIndex` doesn't point at a real line in `lines`. */
 function assertLineIndexInRange(lines: string[], lineIndex: number, fn: string): void {
   if (!Number.isInteger(lineIndex) || lineIndex < 0 || lineIndex >= lines.length) {
     throw new RangeError(
@@ -20,6 +22,7 @@ function assertLineIndexInRange(lines: string[], lineIndex: number, fn: string):
   }
 }
 
+/** Replaces exactly one line (by index) in `code`, leaving every other line untouched. */
 export function replaceLineAt(code: string, lineIndex: number, newLine: string): string {
   const lines = splitLines(code)
   assertLineIndexInRange(lines, lineIndex, 'replaceLineAt')
@@ -27,6 +30,7 @@ export function replaceLineAt(code: string, lineIndex: number, newLine: string):
   return lines.join('\n')
 }
 
+/** Removes exactly one line (by index) from `code`, leaving every other line untouched. */
 export function removeLineAt(code: string, lineIndex: number): string {
   const lines = splitLines(code)
   assertLineIndexInRange(lines, lineIndex, 'removeLineAt')
@@ -34,7 +38,7 @@ export function removeLineAt(code: string, lineIndex: number): string {
   return lines.join('\n')
 }
 
-/** Elemento padrão pra ferramentas de criação (Toolbar) — valores razoáveis, sempre editáveis depois. */
+/** Default element for the Toolbar's creation tools — reasonable placeholder values, always editable afterward. */
 export function createDefaultElement(
   kind: PplaElementKind,
   xDots: number,
@@ -68,10 +72,10 @@ export function createDefaultElement(
 }
 
 /**
- * Insere uma linha nova de elemento dentro do bloco de etiqueta ativo — antes do `Q`xxxx
- * (quantidade) quando existir, senão antes do `E` que fecha o bloco. Se não houver bloco
- * `L..E` nenhum (arquivo vazio/sem bloco), acrescenta no final.
- * Nota: assume um único bloco `L..E` por arquivo (mesma limitação já conhecida do parser).
+ * Inserts a new element line inside the active label block — before the `Q`xxxx
+ * (quantity) line if present, otherwise before the `E` that closes the block. If there's
+ * no `L..E` block at all (empty file / no block), appends at the end.
+ * Note: assumes a single `L..E` block per file (the same known limitation as the parser).
  */
 export function insertElementLine(code: string, newLine: string): string {
   const lines = splitLines(code)

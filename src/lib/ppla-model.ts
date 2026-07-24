@@ -1,13 +1,13 @@
 /**
- * Modelo de primitivas PPLA — espelha o contrato de
+ * PPLA primitive model — mirrors the contract of
  * [printer-ppla](https://github.com/gillianpalhano/printer-ppla) (`IText`, `IBarcode`, `ILine`, `IBox`, `TDirections`)
- * com coordenadas em **dots** (manual A7).
+ * with coordinates in **dots** (A7 manual).
  */
 
-/** Mesmo conjunto que `TDirections` em printer-ppla (`Direction.PORTRAIT` = `'1'`, …). */
+/** Same set as `TDirections` in printer-ppla (`Direction.PORTRAIT` = `'1'`, …). */
 export type PplaDirection = '1' | '2' | '3' | '4'
 
-/** Aliases equivalentes a `Direction` em [printer-ppla](https://github.com/gillianpalhano/printer-ppla). */
+/** Aliases equivalent to `Direction` in [printer-ppla](https://github.com/gillianpalhano/printer-ppla). */
 export const PplaDirections = {
   PORTRAIT: '1' as const,
   REV_LAND: '2' as const,
@@ -24,9 +24,9 @@ export interface PplaElement {
   x: number
   y: number
   rotation: PplaRotation
-  /** Estado de `M` (mirror) no momento em que o elemento foi declarado (guia A6). */
+  /** State of `M` (mirror) at the moment this element was declared (A6 guide). */
   mirror?: boolean
-  /** Estado de `A1`/`A2` (XOR/OR) no momento em que o elemento foi declarado (guia A6). */
+  /** State of `A1`/`A2` (XOR/OR) at the moment this element was declared (A6 guide). */
   logicMode?: 1 | 2
 }
 
@@ -81,7 +81,7 @@ export interface PplaParseDiagnostic {
 }
 
 /**
- * Metadados do job PPLA (bloco de sistema + estado dentro de L..E).
+ * Metadata for the PPLA job (system block + state inside L..E).
  * @see docs/PPLA_Parser_Guide.md
  */
 export interface PplaPixelSize {
@@ -90,38 +90,39 @@ export interface PplaPixelSize {
 }
 
 export interface PplaLabelState {
-  /** cXXXX comprimento (1/100 pol); 0 = contínuo / a definir pelo conteúdo */
+  /** cXXXX length (1/100 inch); 0 = continuous / determined by content */
   continuousLengthHundredths: number | null
-  /** fXXX posição de parada (1/100 pol) */
+  /** fXXX stop position (1/100 inch) */
   stopPositionHundredths: number | null
-  /** Largura lógica em 1/100 pol (quando derivada de c ou fallback) */
+  /** Logical width in 1/100 inch (when derived from c or a fallback) */
   widthHundredths: number | null
-  /** Altura lógica: c, f, ou inferida */
+  /** Logical height: c, f, or inferred */
   heightHundredths: number | null
-  /** Oxxxx — início de impressão vs 0220; no preview: ver `printStartOffsetDotsX` em ppla-interpreter (eixo X) */
+  /** Oxxxx — print start vs 0220; see `printStartOffsetDotsX` in ppla-parse-preamble (X axis) */
   printStartHundredths: number | null
-  /** Rxxxx de sistema (fora de L..E) — offset vertical (1/100 pol) */
+  /** System-level Rxxxx (outside L..E) — vertical offset (1/100 inch) */
   systemVerticalOffsetHundredths: number | null
-  /** Dwh — tamanho de pixel; default D22 = 2x2 */
+  /** Dwh — pixel size; default D22 = 2x2 */
   pixelSize: PplaPixelSize
   /** H02–H20 */
   heat: number | null
   /** Qxxxx */
   quantity: number | null
-  /** Cxxxx no bloco de formatação — margem esquerda (1/100 pol), último valor vence */
+  /** Cxxxx inside the formatting block — left margin (1/100 inch), last value wins */
   formatLeftMarginHundredths: number
-  /** Rxxxx no bloco L..E — deslocamento vertical (1/100 pol), último valor vence */
+  /** Rxxxx inside the L..E block — vertical offset (1/100 inch), last value wins */
   formatVerticalOffsetHundredths: number
-  /** A1 = XOR, A2 = OR; no preview usa OR por defeito (guia) */
+  /** A1 = XOR, A2 = OR; the preview defaults to OR (guide) */
   logicMode: 1 | 2
-  /** M sem dígitos — espelho (toggle simples) */
+  /** Bare `M` (no digits) — mirror toggle */
   mirror: boolean
-  /** Último c activou modo contínuo até e/r */
+  /** Last `c` activated continuous mode until e/r */
   continuousLabelMode: boolean
   /** m / n */
   measurementIsMetric: boolean
 }
 
+/** Creates a fresh `PplaLabelState` with all PPLA defaults (D22 pixel size, XOR logic mode, etc). */
 export function createEmptyPplaLabelState(): PplaLabelState {
   return {
     continuousLengthHundredths: null,
@@ -142,7 +143,7 @@ export function createEmptyPplaLabelState(): PplaLabelState {
   }
 }
 
-/** Deslocamento de margem/offset (guia A6, `C`/`R` dentro do bloco) já somado ao x/y de um elemento. */
+/** Margin/offset shift (A6 guide, `C`/`R` inside the block) already added to an element's x/y. */
 export interface PplaElementFormatShift {
   dx: number
   dy: number
@@ -153,21 +154,21 @@ export interface PplaParseResult {
   elements: AnyPplaElement[]
   diagnostics: PplaParseDiagnostic[]
   /**
-   * Índice da linha de origem (0-based, no array de linhas já dividido) de cada item de
-   * `elements`, na mesma ordem. Usado pelo editor visual para substituir cirurgicamente
-   * só a linha daquele elemento, sem tocar no resto do código.
+   * Source line index (0-based, into the already-split line array) for each entry in
+   * `elements`, in the same order. Used by the visual editor to surgically replace only
+   * that element's line, without touching the rest of the code.
    */
   elementSourceLines: number[]
   /**
-   * Shift de `C`/`R` (guia A6) exatamente como aplicado a cada elemento no momento em que
-   * foi lido — não dá pra reconstruir isso a partir do `label` final, porque `C`/`R` podem
-   * mudar várias vezes dentro do mesmo bloco. Precisa ser invertido ao reescrever a linha
-   * crua de um elemento editado visualmente.
+   * The `C`/`R` shift (A6 guide) exactly as it was applied to each element at the moment
+   * it was read — this can't be reconstructed from the final `label`, because `C`/`R` can
+   * change multiple times within the same block. Must be inverted when rewriting the raw
+   * line of a visually-edited element.
    */
   elementFormatShifts: PplaElementFormatShift[]
 }
 
-/** Payload equivalente a `IText` do printer-ppla (addText). */
+/** Payload equivalent to printer-ppla's `IText` (addText). */
 export interface PrinterPplaTextPayload {
   y: number
   x: number
@@ -179,7 +180,7 @@ export interface PrinterPplaTextPayload {
   direction: PplaDirection
 }
 
-/** Payload equivalente a `IBarcode` (addBarcode). */
+/** Payload equivalent to printer-ppla's `IBarcode` (addBarcode). */
 export interface PrinterPplaBarcodePayload {
   y: number
   x: number
@@ -191,6 +192,7 @@ export interface PrinterPplaBarcodePayload {
   direction: PplaDirection
 }
 
+/** Converts an A7 direction character ('1'-'4') to its rotation in degrees. */
 export function mapDirectionCharToRotation(direction: string): PplaRotation {
   if (direction === '1') {
     return 0
@@ -207,6 +209,7 @@ export function mapDirectionCharToRotation(direction: string): PplaRotation {
   return 0
 }
 
+/** Inverse of `mapDirectionCharToRotation`: converts a rotation in degrees back to its A7 direction character. */
 export function rotationToDirectionChar(rotation: PplaRotation): PplaDirection {
   if (rotation === 0) {
     return PplaDirections.PORTRAIT
@@ -223,6 +226,7 @@ export function rotationToDirectionChar(rotation: PplaRotation): PplaDirection {
   return PplaDirections.PORTRAIT
 }
 
+/** Converts the legacy `A<rotation>...` text format's single-digit rotation code (0-3) to degrees. */
 export function mapLegacyRotationIndexToDegrees(rotationCode: number): PplaRotation {
   if (rotationCode === 1) {
     return 90

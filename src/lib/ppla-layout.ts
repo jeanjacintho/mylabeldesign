@@ -6,13 +6,13 @@ export const PPLA_GRAPHIC_PLACEHOLDER_WIDTH_DOTS = 64
 export const PPLA_GRAPHIC_PLACEHOLDER_HEIGHT_DOTS = 32
 
 /**
- * ooo NÃO é altura em pixels para fontes 0–8, ':' (Courier) ou ';' (font board) — manual A7/AD:
- * fontes 0–8 usam ooo fixo em '000' (todos os exemplos A9/AB do manual confirmam), ':' usa ooo
- * como seletor de symbol set (000–007) e ';' usa ooo como índice da fonte na ROM (AD, pág. 89).
- * Essas fontes internas têm tamanho nativo fixo (não documentado neste manual), escalado só por
- * h/v; usamos aqui um tamanho base único como aproximação razoável.
- * Só a fonte '9' usa ooo como tamanho de verdade: índice 000–006 → pontos (4–18pt) → dots
- * @DEFAULT_PRINTER_DPI, ou ID de fonte PCL (sem tamanho conhecido) para ooo fora dessa faixa.
+ * `ooo` is NOT a pixel height for fonts 0-8, ':' (Courier), or ';' (font board) — A7/AD manual:
+ * fonts 0-8 use a fixed `ooo` of '000' (confirmed by every A9/AB example in the manual), ':'
+ * uses `ooo` as a symbol-set selector (000-007), and ';' uses `ooo` as the font's index in ROM
+ * (AD, p. 89). These internal fonts have a fixed native size (not documented in this manual),
+ * scaled only by h/v — we use a single reasonable base size here as an approximation.
+ * Only font '9' uses `ooo` as a real size: index 000-006 -> points (4-18pt) -> dots at
+ * `DEFAULT_PRINTER_DPI`, or a PCL font ID (unknown size) for `ooo` outside that range.
  * @see docs/PPLA_Parser_Guide.md §6.4
  */
 export function getBaseFontHeightDots(fontType: string, subfont: string): number {
@@ -33,6 +33,7 @@ export function getBaseFontHeightDots(fontType: string, subfont: string): number
   return DEFAULT
 }
 
+/** Rough (not pixel-perfect) local width/height estimate for a text element, based on font size and string length. */
 function roughTextCellDots(element: PplaText): { w: number; h: number } {
   const baseDots = getBaseFontHeightDots(element.fontId, element.subfont)
   const cellH = baseDots * Math.max(1, element.heightMultiplier)
@@ -46,6 +47,7 @@ function roughTextCellDots(element: PplaText): { w: number; h: number } {
   return { w, h }
 }
 
+/** Returns an element's local (pre-rotation) width/height in dots, used for both rendering and layout math. */
 export function getPplaElementLocalSizeDots(
   element: AnyPplaElement,
 ): { width: number; height: number } {
@@ -68,6 +70,7 @@ export function getPplaElementLocalSizeDots(
   }
 }
 
+/** Returns how far an element extends along the vertical (Y) axis on screen, swapping width/height for 90°/270° rotations. */
 export function getPplaElementVerticalExtentDots(
   element: AnyPplaElement,
 ): number {
@@ -78,6 +81,7 @@ export function getPplaElementVerticalExtentDots(
   return size.height
 }
 
+/** Returns how far an element extends along the horizontal (X) axis on screen, swapping width/height for 90°/270° rotations. */
 function getPplaElementHorizontalExtentDots(element: AnyPplaElement): number {
   const size = getPplaElementLocalSizeDots(element)
   if (element.rotation === 90 || element.rotation === 270) {
@@ -86,6 +90,7 @@ function getPplaElementHorizontalExtentDots(element: AnyPplaElement): number {
   return size.width
 }
 
+/** Computes the furthest X/Y extent reached by any element, i.e. the label's minimum content bounding box. */
 export function estimatePplaLayoutExtentsDots(
   elements: AnyPplaElement[],
 ): { maxX: number; maxY: number } {
@@ -98,6 +103,7 @@ export function estimatePplaLayoutExtentsDots(
   return { maxX, maxY }
 }
 
+/** Converts a content bounding box (dots) plus a margin into a minimum label size in millimeters. */
 export function pplaLayoutExtentsToMinLabelMm(
   extents: { maxX: number; maxY: number },
   coordinateDpi: number,

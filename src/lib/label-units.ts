@@ -1,15 +1,15 @@
 /**
- * Espaço físico da etiqueta (mm, dots na impressora) ↔ pixels do preview no canvas.
+ * Physical label space (mm, printer dots) ↔ preview canvas pixels.
  *
- * - PPLA (A7): x, y, largura, altura em **dots** no **DPI da impressora** (ex. Argox 203).
- * - RND: Dots = floor((mm / 25.4) * DPI).
- * - Preview: 1 dot → px lógicos via PPI de referência do canvas (96) e escala visual opcional.
+ * - PPLA (A7): x, y, width, height are in **dots** at the **printer's DPI** (e.g. Argox 203).
+ * - Rounding: dots = floor((mm / 25.4) * DPI).
+ * - Preview: 1 dot → logical px via the canvas reference PPI (96) and an optional visual scale.
  */
 
 export const DEFAULT_PRINTER_DPI = 203
 export const DEFAULT_PREVIEW_SCREEN_SCALE = 2
 
-/** DPIS comuns para seleção na UI (Argox/termicas). */
+/** Common DPI choices for the UI selector (Argox/thermal printers). */
 export const COMMON_PRINTER_DPIS = [203, 300, 600] as const
 
 const SCREEN_PPI = 96
@@ -18,7 +18,7 @@ export const DEFAULT_LABEL_WIDTH_MM = 69
 export const DEFAULT_LABEL_HEIGHT_MM = 37
 
 /**
- * Milímetros → dots no papel (floor, como no RND).
+ * Converts millimeters to printer dots (floored, matching the PPLA/RND convention).
  */
 export function labelMmToPrinterDots(mm: number, printerDpi: number): number {
   if (!Number.isFinite(mm) || !Number.isFinite(printerDpi) || printerDpi <= 0) {
@@ -28,8 +28,9 @@ export function labelMmToPrinterDots(mm: number, printerDpi: number): number {
 }
 
 /**
- * Dots da impressora → pixels lógicos do canvas de preview.
- * Deve ser a MESMA função usada pelo PplaRendererService ao desenhar elementos.
+ * Converts printer dots to logical preview-canvas pixels.
+ * Must be the SAME function used by `PplaRendererService` when drawing elements, so the
+ * on-screen preview and the size/position math stay consistent.
  */
 export function printerDotsToPreviewPx(
   dots: number,
@@ -45,6 +46,7 @@ export function printerDotsToPreviewPx(
   return dots * (SCREEN_PPI / printerDpi) * scale
 }
 
+/** Converts millimeters directly to preview-canvas pixels (mm → dots → px). */
 export function labelMmToPreviewPx(
   mm: number,
   printerDpi: number,
@@ -54,6 +56,7 @@ export function labelMmToPreviewPx(
   return printerDotsToPreviewPx(dots, printerDpi, previewScreenScale)
 }
 
+/** Inverse of `labelMmToPreviewPx`: converts preview-canvas pixels back to millimeters. */
 export function previewPxToLabelMm(
   px: number,
   printerDpi: number,
@@ -74,7 +77,7 @@ export const LABEL_PREVIEW_DPI = DEFAULT_PRINTER_DPI
 /** @deprecated Use DEFAULT_PREVIEW_SCREEN_SCALE. */
 export const LABEL_PREVIEW_SCREEN_SCALE = DEFAULT_PREVIEW_SCREEN_SCALE
 
-/** @deprecated Use labelMmToPreviewPx com DEFAULT_PRINTER_DPI. */
+/** @deprecated Use labelMmToPreviewPx with DEFAULT_PRINTER_DPI. */
 export function labelMmToCanvasPreviewPx(mm: number): number {
   return labelMmToPreviewPx(mm, DEFAULT_PRINTER_DPI, DEFAULT_PREVIEW_SCREEN_SCALE)
 }

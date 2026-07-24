@@ -1,15 +1,15 @@
 /**
- * Conversões de coordenadas isoladas para o editor visual (Konva) — mantém toda a
- * matemática de dots ↔ px do stage ↔ inversão de shift num só lugar, longe dos handlers
- * de evento (arrastar/redimensionar), pra evitar erros de sinal/eixo espalhados pelo código.
+ * Isolated coordinate conversions for the visual (Konva) editor — keeps all the
+ * dots <-> stage-px <-> shift-inversion math in one place, away from event handlers
+ * (drag/resize), to avoid sign/axis mistakes scattered across the codebase.
  *
- * Convenção adotada (espelha exatamente o que `ppla-render.ts` já faz, pra o editor Konva
- * bater visualmente com o preview cru já existente):
- * - PPLA: origem inferior-esquerda, Y cresce pra cima (guia A1).
- * - Stage/canvas: origem superior-esquerda, Y cresce pra baixo.
- * - Cada nó Konva é posicionado pelo canto superior-esquerdo (sem offsetX/offsetY), com
- *   `rotation` igual ao do elemento — o pivô de rotação fica nesse canto, igual ao
- *   `ctx.translate(x, topY); ctx.rotate(...)` do renderer 2D cru.
+ * Convention used (mirrors exactly what `ppla-render.ts` already does, so the Konva
+ * editor matches the existing raw-canvas preview visually):
+ * - PPLA: bottom-left origin, Y grows upward (A1 guide).
+ * - Stage/canvas: top-left origin, Y grows downward.
+ * - Each Konva node is positioned by its top-left corner (no offsetX/offsetY), with
+ *   `rotation` equal to the element's — the rotation pivot stays at that corner, same
+ *   as the raw 2D renderer's `ctx.translate(x, topY); ctx.rotate(...)`.
  */
 
 import { printerDotsToPreviewPx } from '@/lib/label-units'
@@ -17,11 +17,12 @@ import type { AnyPplaElement, PplaElementFormatShift } from '@/lib/ppla-model'
 import { getPplaElementVerticalExtentDots } from '@/lib/ppla-layout'
 import { parseScaleChar, scaleMultiplierToPplaChar } from '@/lib/ppla-scale'
 
+/** Converts printer dots to Konva stage pixels at the given DPI/scale. */
 export function dotsToStagePx(dots: number, dpi: number, scale: number): number {
   return printerDotsToPreviewPx(dots, dpi, scale)
 }
 
-/** Inverso de `dotsToStagePx` — deriva o fator px-por-dot da própria função, sem duplicar constantes. */
+/** Inverse of `dotsToStagePx` — derives the px-per-dot factor from that same function, without duplicating constants. */
 export function stagePxToDots(px: number, dpi: number, scale: number): number {
   const pxPerDot = printerDotsToPreviewPx(1, dpi, scale)
   if (!Number.isFinite(pxPerDot) || pxPerDot === 0) {
@@ -30,7 +31,7 @@ export function stagePxToDots(px: number, dpi: number, scale: number): number {
   return px / pxPerDot
 }
 
-/** Canto superior-esquerdo do elemento no stage — mesmo cálculo de `pplaTopLeftScreenY` em ppla-render.ts. */
+/** The element's top-left corner on the stage — same calculation as `pplaTopLeftScreenY` in ppla-render.ts. */
 export function elementTopLeftStagePosition(
   element: AnyPplaElement,
   canvasHeightPx: number,
@@ -45,10 +46,10 @@ export function elementTopLeftStagePosition(
 }
 
 /**
- * Inverso de `elementTopLeftStagePosition`: dado onde o canto superior-esquerdo do nó
- * Konva ficou no stage (depois de um arraste), devolve o x/y (em dots, já com os shifts
- * de margem/preâmbulo aplicados) que o elemento deveria assumir. `verticalExtentDots` deve
- * vir do elemento tal como está ANTES do arraste (rotação/tamanho não mudam ao só mover).
+ * Inverse of `elementTopLeftStagePosition`: given where the Konva node's top-left corner
+ * ended up on the stage (after a drag), returns the x/y (in dots, already including the
+ * margin/preamble shifts) the element should take. `verticalExtentDots` should come from
+ * the element as it was BEFORE the drag (rotation/size don't change from just moving it).
  */
 export function stagePositionToElementXY(
   stageX: number,
@@ -65,12 +66,12 @@ export function stagePositionToElementXY(
 }
 
 /**
- * O x/y de um `AnyPplaElement` já parseado tem os shifts de `C`/`R` (margem/offset do
- * bloco, guia A6) e o shift global de preâmbulo (`O`/`R` de sistema, `printStartOffsetDotsX`/
- * `verticalPrintOffsetDotsY`) somados. Pra reescrever a linha crua de um elemento editado,
- * é preciso subtrair os dois antes de emitir — usando o shift EXATO gravado por elemento
- * em `elementFormatShifts` (não um valor recalculado do estado atual, que pode ter mudado
- * de lá pra cá com `C`/`R` repetidos dentro do mesmo bloco).
+ * A parsed `AnyPplaElement`'s x/y already has the `C`/`R` shift (block margin/offset, A6
+ * guide) and the global preamble shift (system `O`/`R`, `printStartOffsetDotsX`/
+ * `verticalPrintOffsetDotsY`) added in. To rewrite an edited element's raw line, both must
+ * be subtracted before emitting — using the EXACT shift recorded per element in
+ * `elementFormatShifts` (not a value recomputed from the current state, which may have
+ * changed since then via repeated `C`/`R` within the same block).
  */
 export function toRawHeaderXY(
   finalXDots: number,
@@ -85,7 +86,7 @@ export function toRawHeaderXY(
   }
 }
 
-/** Direção oposta de `toRawHeaderXY` — usada só se algum dia precisarmos exibir o valor cru. */
+/** Opposite direction of `toRawHeaderXY` — used only if we ever need to display the raw value. */
 export function fromRawHeaderXY(
   rawXDots: number,
   rawYDots: number,
@@ -100,12 +101,12 @@ export function fromRawHeaderXY(
 }
 
 /**
- * Redimensionar texto no PPLA não é um W/H livre — é `widthMultiplier`/`heightMultiplier`
- * inteiros de 1 a 24 (guia A7, `h`/`v`). Converte um fator de escala contínuo (do
- * Transformer do Konva) pro multiplicador inteiro válido mais próximo.
+ * Resizing text in PPLA isn't a free W/H — it's integer `widthMultiplier`/`heightMultiplier`
+ * from 1 to 24 (A7 guide, `h`/`v`). Converts a continuous scale factor (from Konva's
+ * Transformer) to the nearest valid integer multiplier.
  */
 export function snapToNearestScaleMultiplier(rawMultiplier: number): number {
   const clamped = Math.max(1, Math.min(24, Math.round(rawMultiplier)))
-  // garante que o valor resultante é redondamente representável num carácter de escala PPLA
+  // ensures the resulting value round-trips through a real PPLA scale character
   return parseScaleChar(scaleMultiplierToPplaChar(clamped))
 }

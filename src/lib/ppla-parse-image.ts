@@ -26,7 +26,7 @@ import { parseScaleChar } from '@/lib/ppla-scale'
 
 const A7_HEADER_LENGTH = 15
 const GRAPHIC_NAME_MAX_LENGTH = 16
-/** ooo="000" no header de código de barras significa "altura padrão" (guia A7, pág. 53), não zero. */
+/** ooo="000" in a barcode header means "default height" (A7 guide, p. 53), not zero. */
 const BARCODE_DEFAULT_HEIGHT_DOTS = 50
 
 export const isIgnorableLabelFormattingLine = isIgnorablePplaFormattingLine
@@ -36,6 +36,7 @@ interface ParsedLineResult {
   diagnostic: PplaParseDiagnostic | null
 }
 
+/** Builds a `PplaParseDiagnostic` record for a warning/error found on a given source line. */
 function createDiagnostic(
   lineNumber: number,
   rawLine: string,
@@ -54,6 +55,7 @@ function createDiagnostic(
   }
 }
 
+/** True for A7 header `t` characters that select a text font (digits, or ':'/';' for Courier/font-board). */
 function isTextFontTypeChar(t: string): boolean {
   if (t >= '0' && t <= '9') {
     return true
@@ -61,6 +63,7 @@ function isTextFontTypeChar(t: string): boolean {
   return t === ':' || t === ';'
 }
 
+/** True for A7 header `t` characters that select a barcode type ('A'-'T' readable, 'a'-'z' non-readable). */
 function isBarcodeTypeChar(t: string): boolean {
   if (t >= 'A' && t <= 'T') {
     return true
@@ -68,6 +71,7 @@ function isBarcodeTypeChar(t: string): boolean {
   return t >= 'a' && t <= 'z'
 }
 
+/** True for a valid PPLA scale character ('0'-'9' or 'A'-'O'). */
 function isScaleChar(char: string): boolean {
   if (char >= '0' && char <= '9') {
     return true
@@ -75,6 +79,7 @@ function isScaleChar(char: string): boolean {
   return char >= 'A' && char <= 'O'
 }
 
+/** Parses a strict 4-digit numeric field (e.g. an A7 `yyyy`/`xxxx` coordinate); null if malformed. */
 function parseFourDigitField(value: string): number | null {
   if (!/^\d{4}$/.test(value)) {
     return null
@@ -82,6 +87,7 @@ function parseFourDigitField(value: string): number | null {
   return Number(value)
 }
 
+/** Parses a strict 3-digit numeric field (e.g. an A7 `ooo`); null if malformed. */
 function parseThreeDigitField(value: string): number | null {
   if (!/^\d{3}$/.test(value)) {
     return null
@@ -89,6 +95,7 @@ function parseThreeDigitField(value: string): number | null {
   return Number(value)
 }
 
+/** Extracts the y/x dot coordinates from a 15-character A7 header (`Rthvoooyyyyxxxx`). */
 function parseA7HeaderCoordinates(header: string): { x: number; y: number } | null {
   const y = parseFourDigitField(header.slice(7, 11))
   const x = parseFourDigitField(header.slice(11, 15))
@@ -100,6 +107,7 @@ function parseA7HeaderCoordinates(header: string): { x: number; y: number } | nu
   return { x, y }
 }
 
+/** Parses a standard A7 text element (`Rthvoooyyyyxxxx[data]`) from its 15-char header + data. */
 function parseTextHeader(
   header: string,
   data: string,
@@ -135,6 +143,7 @@ function parseTextHeader(
   }
 }
 
+/** Parses a standard A7 barcode element (`Rthvoooyyyyxxxx[data]`) from its 15-char header + data. */
 function parseBarcodeHeader(
   header: string,
   data: string,
@@ -174,6 +183,7 @@ function parseBarcodeHeader(
   }
 }
 
+/** Parses a box line, either the 3-digit (`RX11000yyyyxxxxBaaabbbtttsss`) or 4-digit (`b`) variant. */
 function tryParseBox(line: string): PplaBox | null {
   const box3 =
     /^([1-4])X11000(\d{4})(\d{4})B(\d{3})(\d{3})(\d{3})(\d{3})$/
@@ -234,6 +244,7 @@ function tryParseBox(line: string): PplaBox | null {
   return null
 }
 
+/** Parses a line element, either the 3-digit (`RX11000yyyyxxxxLaaabbb`) or 4-digit (`l`) variant. */
 function tryParseLine(line: string): PplaLine | null {
   const line3 = /^([1-4])X11000(\d{4})(\d{4})L(\d{3})(\d{3})$/
   const m3 = line.match(line3)
@@ -280,6 +291,7 @@ function tryParseLine(line: string): PplaLine | null {
   return null
 }
 
+/** Parses the legacy `A<rotation><font><wMul><hMul><x>,<y>,"<text>"` text format (not the standard A7 header). */
 function tryParseLegacyText(line: string): PplaText | null {
   const textRegex =
     /^A(?<rotation>[0-3])(?<fontId>[A-Za-z0-9])(?<widthMul>\d)(?<heightMul>\d)(?<x>\d+),(?<y>\d+),"(?<text>.*)"$/
@@ -321,6 +333,7 @@ function tryParseLegacyText(line: string): PplaText | null {
   }
 }
 
+/** Parses the legacy `X<x>,<y>,<width>,<height>,<thickness>` box format (not the standard A7 header). */
 function tryParseLegacyBox(line: string): PplaBox | null {
   const boxRegex = /^X(?<x>\d+),(?<y>\d+),(?<width>\d+),(?<height>\d+),(?<thickness>\d+)$/
 
@@ -358,15 +371,15 @@ function tryParseLegacyBox(line: string): PplaBox | null {
 }
 
 /**
- * DataMatrix (código de barras 'W') não segue o header padrão Rthvoooyyyyxxxx — tem um
- * layout próprio: R + 'W' + '1' (literal) + 1 char não documentado (varia entre exemplos
- * reais — 'c' no guia A10 pág. 84, 'd' em etiquetas reais da Lave Bem — tratado como
- * campo desconhecido/ignorado) + c(mult. horiz.) + d(mult. vert.) + '000' (literal) +
- * yyyy + xxxx + opcionalmente '2000' (literal) + jjj (linhas) + kkk (colunas) + dados.
- * O bloco '2000'+jjj+kkk é omitido em etiquetas reais quando linhas/colunas são automáticas.
- * Confirmado byte-a-byte contra o exemplo do guia A10 (`1W1c23000005000312000000000DATA
- * MATRIX` → mult=2,3; y=50; x=31) e uma etiqueta real da Lave Bem sem esse bloco opcional
- * (`1W1d4400000310340https://...` → mult=4,4; y=31; x=340; dados=URL).
+ * DataMatrix (barcode type 'W') doesn't follow the standard Rthvoooyyyyxxxx header — it has
+ * its own layout: R + 'W' + '1' (literal) + 1 undocumented char (varies across real-world
+ * samples — 'c' in the A10 guide p. 84, 'd' in real Lave Bem labels — treated as an
+ * unknown/ignored field) + c (horizontal mult.) + d (vertical mult.) + '000' (literal) +
+ * yyyy + xxxx + optionally '2000' (literal) + jjj (rows) + kkk (columns) + data.
+ * The '2000'+jjj+kkk block is omitted in real labels when rows/columns are automatic.
+ * Verified byte-by-byte against the A10 guide's own example (`1W1c23000005000312000000000DATA
+ * MATRIX` -> mult=2,3; y=50; x=31) and a real Lave Bem label without that optional block
+ * (`1W1d4400000310340https://...` -> mult=4,4; y=31; x=340; data=URL).
  */
 function tryParseDataMatrixBarcode(line: string, rotation: PplaRotation): PplaBarcode | null {
   const match = /^[1-4]W1.(.)(.)000(\d{4})(\d{4})(?:2000\d{3}\d{3})?/.exec(line)
@@ -397,6 +410,7 @@ function tryParseDataMatrixBarcode(line: string, rotation: PplaRotation): PplaBa
   }
 }
 
+/** Parses a graphic reference line (`1Y11000yyyyxxxx<name>`) — always direction '1' per the guide. */
 function tryParseGraphicReference(line: string): PplaGraphic | null {
   const match = /^1Y11000(\d{4})(\d{4})(.{1,16})$/.exec(line)
   if (!match) {
@@ -429,10 +443,12 @@ const LABEL_NOISE_LINE_PATTERNS: RegExp[] = [
   /^KI/,
 ]
 
+/** True for known noise lines (e.g. `PF`, `SF`, `KI...`) that are safe to ignore inside a label block. */
 function isLabelContextNoiseLine(line: string): boolean {
   return LABEL_NOISE_LINE_PATTERNS.some(re => re.test(line))
 }
 
+/** Resets the per-block formatting state (margin, offset, pixel size, heat, quantity, logic mode, mirror) on `L`. */
 function resetLabelBlockFormatting(s: PplaLabelState): void {
   s.formatLeftMarginHundredths = 0
   s.formatVerticalOffsetHundredths = 0
@@ -443,6 +459,11 @@ function resetLabelBlockFormatting(s: PplaLabelState): void {
   s.mirror = false
 }
 
+/**
+ * Tries to interpret `line` as one of the A5/A6 state commands (`m`/`n`, `c`, `f`, `O`, `M`,
+ * `D`, `H`, `Q`, `C`, `R`, `A`), mutating the label state in place. Returns false (no mutation)
+ * if the line doesn't match any known state command.
+ */
 function tryConsumePplaStateCommand(
   line: string,
   s: PplaLabelState,
@@ -544,6 +565,7 @@ function tryConsumePplaStateCommand(
   return false
 }
 
+/** Converts the current `C`/`R` formatting state (1/100 inch) into a dots shift at the given DPI. */
 function computeLabelFormatShift(
   s: PplaLabelState,
   printerDpi: number,
@@ -554,6 +576,7 @@ function computeLabelFormatShift(
   }
 }
 
+/** Adds a previously-computed margin/offset shift to an element's x/y (no-op if the shift is zero). */
 function applyLabelFormatShifts(
   el: AnyPplaElement,
   shift: PplaElementFormatShift,
@@ -568,6 +591,10 @@ function applyLabelFormatShifts(
   }
 }
 
+/**
+ * Dispatches a label-formatting-command line (leading direction digit '1'-'4') to the
+ * matching element parser: graphic reference, DataMatrix, box/line, or standard A7 text/barcode.
+ */
 export function tryParseImageFormattingCommand(line: string): AnyPplaElement | null {
   if (line.length < 2) {
     return null
@@ -618,6 +645,11 @@ export function tryParseImageFormattingCommand(line: string): AnyPplaElement | n
   return parseBarcodeHeader(header, data, rotation)
 }
 
+/**
+ * Parses a single normalized PPLA line into an element (trying the standard formats first,
+ * then the legacy text/box formats), producing a diagnostic when the line is recognized as
+ * an invalid/unsupported command rather than silently ignorable noise.
+ */
 function parsePplaElementLine(
   rawLine: string,
   lineNumber: number,
@@ -707,16 +739,18 @@ function parsePplaElementLine(
 
 export interface ParsePplaElementsOptions {
   normalizeLineEndings?: boolean
-  /** 1/100 pol → deslocamento em dots (mesma grelha que x/y) para C/R de formatação */
+  /** 1/100 inch -> dots shift (same grid as x/y) for the `C`/`R` formatting commands */
   printerDpi?: number
 }
 
+/** Falls back the label's height to the `f` stop position when no `c` continuous-length height was set. */
 function finalizeLabelState(s: PplaLabelState): void {
   if (s.heightHundredths == null && s.stopPositionHundredths != null) {
     s.heightHundredths = s.stopPositionHundredths
   }
 }
 
+/** Splits raw PPLA source into lines, optionally normalizing CRLF/CR to LF first. */
 export function splitPplaLines(
   pplaCode: string,
   normalizeLineEndings?: boolean,
@@ -729,6 +763,7 @@ export function splitPplaLines(
   return pplaCode.split(/\r\n|\r|\n/)
 }
 
+/** Convenience wrapper around `parsePplaCode` that returns only the parsed elements. */
 export function parsePplaElementsFromCode(
   pplaCode: string,
   options: ParsePplaElementsOptions = {},
@@ -736,6 +771,11 @@ export function parsePplaElementsFromCode(
   return parsePplaCode(pplaCode, options).elements
 }
 
+/**
+ * Parses a full PPLA job into elements, label state, diagnostics, and the per-element
+ * source-line/format-shift bookkeeping needed for surgical visual-editor line replacement.
+ * This is the parser's main entry point.
+ */
 export function parsePplaCode(
   pplaCode: string,
   options: ParsePplaElementsOptions = {},
@@ -810,6 +850,7 @@ export function parsePplaCode(
   return { label, elements, diagnostics, elementSourceLines, elementFormatShifts }
 }
 
+/** Parses just the job-level preamble (continuous mode, units, print-start/vertical offsets) needed for the global print-origin shift. */
 export function parsePplaLabelPreamble(pplaCode: string): PplaLabelPreamble {
   const { label } = parsePplaCode(pplaCode, {
     normalizeLineEndings: true,

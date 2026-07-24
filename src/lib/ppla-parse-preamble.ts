@@ -2,7 +2,7 @@ import type { AnyPplaElement } from '@/lib/ppla-model'
 
 const LABEL_FORMAT_MIN_DOT_INCH_OS204 = 0.0049
 
-/** Padrão manual Argox `<STX>Oxxxx` (ex.: 0220). */
+/** Standard Argox manual pattern `<STX>Oxxxx` (e.g. 0220). */
 const DEFAULT_PRINT_START_HUNDREDTHS = 220
 
 const IGNORED_LABEL_FORMATTING_LINE_PATTERNS = [
@@ -26,7 +26,8 @@ const IGNORED_LABEL_FORMATTING_LINE_PATTERNS = [
 ]
 
 const LEADING_INVISIBLE_FORMAT_CHARS =
-  /^[\uFEFF\u200B-\u200F\u202A-\u202E\u2066-\u2069]+/
+  /^[\ufeff\u200b-\u200f\u202a-\u202e\u2066-\u2069]+/
+/** Strips leading zero-width/bidi marks (e.g. LRM) so a leftover BOM-like prefix doesn't hide the real first character. */
 function stripLeadingInvisibleFormatChars(s: string): string {
   let out = s
   while (LEADING_INVISIBLE_FORMAT_CHARS.test(out)) {
@@ -36,19 +37,19 @@ function stripLeadingInvisibleFormatChars(s: string): string {
 }
 
 /**
- * Normaliza uma linha de job PPLA:
- * - `trim` nas pontas;
- * - remove BOM (U+FEFF) no início;
- * - remove **apenas** caracteres de controlo C0 (e DEL) **no prefixo** antes do primeiro carácter
- *   imprimível — típico `<STX>`, `<SOH>`, etc. (manual Argox).
- * - remove marcas de largura zero / bidi no prefixo (ex.: LRM) para o dígito de direção A7 `1`–`4`
- *   ser reconhecido após colar texto de editores ou PDFs.
+ * Normalizes a single PPLA job line:
+ * - trims both ends;
+ * - removes a leading BOM (U+FEFF);
+ * - removes **only** C0 control characters (and DEL) **in the prefix**, before the first
+ *   printable character — typically `<STX>`, `<SOH>`, etc. (Argox manual).
+ * - removes zero-width/bidi marks in the prefix (e.g. LRM) so the A7 direction digit
+ *   `1`–`4` is recognized after pasting text from editors or PDFs.
  *
- * Não percorre o resto da linha: o campo `data` após o cabeçalho de 15 caracteres pode conter TAB
- * ou outros caracteres que antes eram apagados e quebravam o parse/render.
+ * Does not scan the rest of the line: the `data` field after the 15-character header may
+ * contain TAB or other characters that used to get stripped and broke parsing/rendering.
  */
 export function stripPplaLineControls(line: string): string {
-  const trimmed = line.trim().replace(/^\uFEFF+/, '')
+  const trimmed = line.trim().replace(/^\ufeff+/, '')
   if (!trimmed) {
     return ''
   }
@@ -69,10 +70,12 @@ export function stripPplaLineControls(line: string): string {
   return stripLeadingInvisibleFormatChars(trimmed.slice(i)).trimEnd()
 }
 
+/** Returns true for lines that are known label-formatting noise safe to ignore (outside a label block). */
 export function isIgnorablePplaFormattingLine(line: string): boolean {
   return IGNORED_LABEL_FORMATTING_LINE_PATTERNS.some(re => re.test(line))
 }
 
+/** Scans the raw PPLA code for a `Dwh` command and estimates the printer's coordinate DPI from it. */
 export function estimateCoordinateDpiFromPplaCode(pplaCode: string): number | null {
   const lines = pplaCode.split(/\r\n|\r|\n/)
   for (const raw of lines) {
@@ -96,8 +99,9 @@ export interface PplaLabelPreamble {
 }
 
 /**
- * Oxxxx frente a 0220: offset em X (polegada/mm) em **dots** no preview.
- * (docs/ppla-interpreter.md; o guia PPLA tabela 3.1 cita eixo vertical — o manual Argox/este preview usa a convenção de deslocamento horizontal.)
+ * Oxxxx relative to the 0220 default: X offset (inch/mm) in **dots** for the preview.
+ * (docs/ppla-interpreter.md; the PPLA guide's table 3.1 mentions the vertical axis — the
+ * Argox manual/this preview use the horizontal-offset convention instead.)
  */
 export function printStartOffsetDotsX(
   preamble: PplaLabelPreamble,
@@ -121,6 +125,7 @@ export function printStartOffsetDotsX(
   return deltaBaseUnits * coordinateDpi
 }
 
+/** Converts the system-level vertical offset (`R` outside the L..E block) to a dots shift for the Y axis. */
 export function verticalPrintOffsetDotsY(
   preamble: PplaLabelPreamble,
   coordinateDpi: number,
@@ -138,6 +143,7 @@ export function verticalPrintOffsetDotsY(
   return baseUnits * coordinateDpi
 }
 
+/** Translates every element's x/y by the given dots delta (used to apply the print-start/vertical-offset shifts). */
 export function shiftPplaElements(
   elements: AnyPplaElement[],
   deltaXDots: number,

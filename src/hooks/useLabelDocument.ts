@@ -9,18 +9,18 @@ import { toRawHeaderXY } from '@/lib/ppla-coords'
 const UNDO_STACK_LIMIT = 100
 
 export interface UseLabelDocumentOptions {
-  /** DPI escolhido na UI — só usado quando o próprio código não declara um `Dwh` (D11 etc). */
+  /** DPI chosen in the UI — only used when the code itself doesn't declare a `Dwh` (D11 etc). */
   fallbackPrinterDpi: number
 }
 
 /**
- * Fonte única de verdade do editor visual: `code` (texto PPLA cru) é o dado real; tudo
- * mais (`elements`, `label`, índices de linha, shifts, `coordinateDpi`) é derivado via
- * parse a cada mudança de código — nunca mantido como estado próprio (evita divergência).
+ * Single source of truth for the visual editor: `code` (raw PPLA text) is the real data;
+ * everything else (`elements`, `label`, line indices, shifts, `coordinateDpi`) is derived
+ * via parsing on every code change — never kept as its own state (avoids divergence).
  *
- * Editar visualmente (arrastar/redimensionar/painel) substitui/insere/remove só a linha
- * daquele elemento no texto (ppla-document.ts) — todo o resto do arquivo (preâmbulo,
- * comandos de fornecedor desconhecidos) fica intocado.
+ * Editing visually (drag/resize/panel) replaces/inserts/removes only that element's line
+ * in the text (ppla-document.ts) — the rest of the file (preamble, unknown vendor
+ * commands) is left untouched.
  */
 export function useLabelDocument(initialCode: string, options: UseLabelDocumentOptions) {
   const { fallbackPrinterDpi } = options
@@ -53,11 +53,12 @@ export function useLabelDocument(initialCode: string, options: UseLabelDocumentO
       ? elements[selectedIndex]
       : null
 
+  /** Sets which element index is currently selected (or `null` to clear selection). */
   const setSelectedIndex = useCallback((index: number | null) => {
     setSelectedIndexState(index)
   }, [])
 
-  /** Reclampa a seleção pro índice válido mais próximo sempre que a lista de elementos muda de tamanho. */
+  /** Re-clamps the selection to the nearest valid index whenever the element list changes size. */
   const clampSelection = useCallback((nextLength: number) => {
     setSelectedIndexState(prev => {
       if (prev === null) return null
@@ -66,6 +67,7 @@ export function useLabelDocument(initialCode: string, options: UseLabelDocumentO
     })
   }, [])
 
+  /** Pushes the current code onto the undo stack, clears redo, and applies `nextCode`. */
   const commit = useCallback((nextCode: string) => {
     setUndoStack(prev => {
       const next = [...prev, code]
@@ -75,11 +77,12 @@ export function useLabelDocument(initialCode: string, options: UseLabelDocumentO
     setCodeState(nextCode)
   }, [code])
 
-  /** Edição direta do texto (textarea de código) — também entra na pilha de undo. */
+  /** Direct edit of the code text (the code panel's textarea) — also goes onto the undo stack. */
   const setCode = useCallback((nextCode: string) => {
     commit(nextCode)
   }, [commit])
 
+  /** Reverts to the previous code snapshot, moving the current one onto the redo stack. */
   const undo = useCallback(() => {
     if (undoStack.length === 0) return
     const previous = undoStack[undoStack.length - 1]
@@ -88,6 +91,7 @@ export function useLabelDocument(initialCode: string, options: UseLabelDocumentO
     setCodeState(previous)
   }, [code, undoStack])
 
+  /** Re-applies the most recently undone code snapshot, moving the current one onto the undo stack. */
   const redo = useCallback(() => {
     if (redoStack.length === 0) return
     const next = redoStack[redoStack.length - 1]
@@ -96,6 +100,11 @@ export function useLabelDocument(initialCode: string, options: UseLabelDocumentO
     setCodeState(next)
   }, [code, redoStack])
 
+  /**
+   * Applies a partial update to one element (position, size, text, etc.), re-emits just
+   * that element's PPLA line (inverting the recorded margin/preamble shift first), and
+   * surgically replaces only that source line in the code.
+   */
   const updateElement = useCallback((index: number, patch: Partial<AnyPplaElement>) => {
     const current = elements[index]
     const lineIndex = elementSourceLines[index]
@@ -113,10 +122,12 @@ export function useLabelDocument(initialCode: string, options: UseLabelDocumentO
     commit(nextCode)
   }, [code, commit, elementFormatShifts, elementSourceLines, elements, globalShift])
 
+  /** Creates a default element of `kind` at the given dots position and inserts its line into the active block. */
   const addElement = useCallback((kind: PplaElementKind, xDots: number, yDots: number) => {
     const draft = createDefaultElement(kind, xDots, yDots)
-    // novo elemento entra no fim do bloco atual: o shift vigente nesse ponto é o estado
-    // final do label (nada muda `C`/`R` depois dele, já que é inserido antes de Q/E)
+    // the new element lands at the end of the current block: the shift in effect at that
+    // point is the label's final state (nothing changes `C`/`R` after it, since it's
+    // inserted before Q/E)
     const shift = {
       dx: (label.formatLeftMarginHundredths / 100) * coordinateDpi,
       dy: (label.formatVerticalOffsetHundredths / 100) * coordinateDpi,
@@ -130,6 +141,7 @@ export function useLabelDocument(initialCode: string, options: UseLabelDocumentO
     setSelectedIndexState(elements.length)
   }, [code, coordinateDpi, commit, elements.length, globalShift, label.formatLeftMarginHundredths, label.formatVerticalOffsetHundredths])
 
+  /** Removes one element's source line from the code and adjusts the selection accordingly. */
   const deleteElement = useCallback((index: number) => {
     const lineIndex = elementSourceLines[index]
     if (lineIndex === undefined) return

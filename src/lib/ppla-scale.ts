@@ -1,7 +1,8 @@
 /**
- * Escala PPLA: '1'–'9' e 'A'–'O' (A=10 … O=24). '0' → 10 (igual ao parser).
+ * PPLA scale characters: '1'–'9' and 'A'–'O' (A=10 … O=24). '0' → 10 (same as the parser).
  */
 
+/** Parses a single PPLA scale character (`h`/`v` etc.) into its numeric multiplier (1-24). */
 export function parseScaleChar(char: string): number {
   if (char >= 'A' && char <= 'O') {
     return 10 + (char.charCodeAt(0) - 'A'.charCodeAt(0))
@@ -16,7 +17,7 @@ export function parseScaleChar(char: string): number {
   return 1
 }
 
-/** Inverso de `parseScaleChar` para emitir linhas A7 (preferência: `0` para valor 10). */
+/** Inverse of `parseScaleChar`, used when emitting A7 lines (prefers `0` for value 10). */
 export function scaleMultiplierToPplaChar(multiplier: number): string {
   const n = Math.max(1, Math.min(24, Math.floor(multiplier)))
   if (n >= 1 && n <= 9) {

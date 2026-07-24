@@ -25,10 +25,11 @@ export interface PplaRendererOptions {
 
 export interface PplaRenderContext {
   canvasHeightPx: number
-  /** Dwh, A1/A2: preview alinha a docs/PPLA_Parser_Guide.md (OR preferível a XOR) */
+  /** Dwh, A1/A2: the preview follows docs/PPLA_Parser_Guide.md (OR preferred over XOR) */
   labelState?: PplaLabelState
 }
 
+/** Draws parsed PPLA elements onto a raw HTML5 2D canvas context — the read-only preview renderer. */
 export class PplaRendererService {
   private readonly dpi: number
   private readonly scaleFactor: number
@@ -40,6 +41,7 @@ export class PplaRendererService {
     this.scaleFactor = options.scaleFactor ?? DEFAULT_SCALE_FACTOR
   }
 
+  /** Draws every element onto `ctx`, dispatching by kind and applying each element's logic mode (XOR/OR). */
   public render(
     elements: AnyPplaElement[],
     ctx: CanvasRenderingContext2D,
@@ -48,7 +50,7 @@ export class PplaRendererService {
     const { canvasHeightPx, labelState } = renderContext
     for (const element of elements) {
       ctx.save()
-      /** A1 = XOR (tinta sobreposta se cancela), A2 = OR (aditivo) — guia A6 */
+      /** A1 = XOR (overlapping ink cancels out), A2 = OR (additive) — A6 guide */
       ctx.globalCompositeOperation = element.logicMode === 1 ? 'xor' : 'source-over'
 
       if (element.type === 'text') {
@@ -69,6 +71,7 @@ export class PplaRendererService {
     }
   }
 
+  /** Converts a value in printer dots to preview-canvas pixels at this renderer's configured DPI/scale. */
   private convertDotsToPixels(valueInDots: number): number {
     return printerDotsToPreviewPx(valueInDots, this.dpi, this.scaleFactor)
   }
@@ -82,6 +85,7 @@ export class PplaRendererService {
     return { scaleX: w / 2, scaleY: h / 2 }
   }
 
+  /** Computes the top-left screen Y for an element, converting from PPLA's bottom-left/Y-up origin. */
   private pplaTopLeftScreenY(
     element: AnyPplaElement,
     canvasHeightPx: number,
@@ -92,6 +96,7 @@ export class PplaRendererService {
     return canvasHeightPx - this.convertDotsToPixels(element.y + verticalExtentDots)
   }
 
+  /** Draws a text element, applying font size, rotation, and the `M` mirror toggle. */
   private renderText(
     element: PplaText,
     ctx: CanvasRenderingContext2D,
@@ -120,7 +125,7 @@ export class PplaRendererService {
     ctx.textBaseline = 'bottom'
     ctx.font = `${fontSizePx}px monospace`
 
-    /** M (mirror): espelha o campo mantendo o ponto de ancoragem (x,y) fixo — guia A6 */
+    /** M (mirror): flips the field while keeping the anchor point (x,y) fixed — A6 guide */
     const widthScale = Math.max(1, element.widthMultiplier) * (element.mirror ? -1 : 1)
     ctx.scale(widthScale, 1)
     ctx.textAlign = element.mirror ? 'right' : 'left'
@@ -129,12 +134,14 @@ export class PplaRendererService {
     ctx.restore()
   }
 
+  /** Computes a text element's rendered font size in pixels, from its font table height and multiplier. */
   private getTextFontSizePx(element: PplaText): number {
     const baseDots = getBaseFontHeightDots(element.fontId, element.subfont)
     const scaledDots = baseDots * Math.max(1, element.heightMultiplier)
     return this.convertDotsToPixels(scaledDots)
   }
 
+  /** Draws a barcode as a placeholder box with its type and data string (not real bars/pixels). */
   private renderBarcode(
     element: PplaBarcode,
     ctx: CanvasRenderingContext2D,
@@ -164,6 +171,7 @@ export class PplaRendererService {
     ctx.restore()
   }
 
+  /** Draws a box as a hollow rectangle (four filled border strips), skipping invalid/non-positive sizes. */
   private renderBox(
     element: PplaBox,
     ctx: CanvasRenderingContext2D,
@@ -216,6 +224,7 @@ export class PplaRendererService {
     ctx.restore()
   }
 
+  /** Draws a line as a solid filled rectangle. */
   private renderLine(
     element: PplaLine,
     ctx: CanvasRenderingContext2D,
@@ -236,6 +245,7 @@ export class PplaRendererService {
     ctx.restore()
   }
 
+  /** Draws a graphic reference as a placeholder box with its file name (real image data isn't available). */
   private renderGraphicReference(
     element: PplaGraphic,
     ctx: CanvasRenderingContext2D,
@@ -260,6 +270,7 @@ export class PplaRendererService {
     ctx.restore()
   }
 
+  /** Rotates the canvas context around its current origin by the element's PPLA rotation. */
   private applyRotation(ctx: CanvasRenderingContext2D, rotation: PplaRotation): void {
     if (rotation === 0) {
       return
@@ -268,6 +279,7 @@ export class PplaRendererService {
     ctx.rotate(radians)
   }
 
+  /** Fills the four border strips of a hollow box/frame, anchored at its bottom-left corner. */
   private drawBoxStrokeBottomLeft(
     ctx: CanvasRenderingContext2D,
     widthPx: number,
