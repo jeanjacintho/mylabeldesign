@@ -9,15 +9,33 @@ export const PPLA_GRAPHIC_PLACEHOLDER_HEIGHT_DOTS = 32
  * `ooo` is NOT a pixel height for fonts 0-8, ':' (Courier), or ';' (font board) — A7/AD manual:
  * fonts 0-8 use a fixed `ooo` of '000' (confirmed by every A9/AB example in the manual), ':'
  * uses `ooo` as a symbol-set selector (000-007), and ';' uses `ooo` as the font's index in ROM
- * (AD, p. 89). These internal fonts have a fixed native size (not documented in this manual),
- * scaled only by h/v — we use a single reasonable base size here as an approximation.
+ * (AD, p. 89). These internal fonts have a fixed native size, scaled only by h/v.
+ *
+ * The Programmer's Manual never prints exact per-font dot sizes (AD, p. 90-92, only shows
+ * character maps at growing but unlabeled sizes). The printer's own General Specifications
+ * (Argox OS-2140 series User Manual, "Fonts" §, p. 58) does publish a real range for these
+ * resident fonts: 0.049"H ~ 0.23"H (1.25mm ~ 6.0mm) at 203 dpi, i.e. ~10 to ~48 dots. Font 0 is
+ * the smallest (barely-legible ASCII set) and font 8 (OCR-B) the largest per the AD character
+ * maps, so we interpolate across that documented range instead of using one flat size for all
+ * of them — a flat size was the bug: small fonts (0-3) rendered as oversized as font 8.
  * Only font '9' uses `ooo` as a real size: index 000-006 -> points (4-18pt) -> dots at
  * `DEFAULT_PRINTER_DPI`, or a PCL font ID (unknown size) for `ooo` outside that range.
  * @see docs/PPLA_Parser_Guide.md §6.4
  */
-export function getBaseFontHeightDots(fontType: string, subfont: string): number {
-  const DEFAULT = 24
+const RESIDENT_FONT_HEIGHT_DOTS: Record<string, number> = {
+  '0': 10,
+  '1': 13,
+  '2': 16,
+  '3': 20,
+  '4': 24,
+  '5': 28,
+  '6': 32,
+  '7': 38,
+  '8': 48,
+}
+const DEFAULT_RESIDENT_FONT_HEIGHT_DOTS = 24
 
+export function getBaseFontHeightDots(fontType: string, subfont: string): number {
   if (fontType === '9' && /^\d{3}$/.test(subfont)) {
     const n = Number.parseInt(subfont, 10)
     if (n >= 0 && n <= 6) {
@@ -30,7 +48,7 @@ export function getBaseFontHeightDots(fontType: string, subfont: string): number
     }
   }
 
-  return DEFAULT
+  return RESIDENT_FONT_HEIGHT_DOTS[fontType] ?? DEFAULT_RESIDENT_FONT_HEIGHT_DOTS
 }
 
 /** Rough (not pixel-perfect) local width/height estimate for a text element, based on font size and string length. */
