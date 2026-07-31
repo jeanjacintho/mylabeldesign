@@ -70,6 +70,7 @@ export function PplaElementShape({
         fill={FILL}
         width={widthPx}
         height={heightPx}
+        wrap="none"
         verticalAlign="bottom"
         scaleX={mirrorScaleX}
         stroke={isSelected ? '#1971c2' : undefined}
