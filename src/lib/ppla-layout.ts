@@ -6,6 +6,17 @@ export const PPLA_GRAPHIC_PLACEHOLDER_WIDTH_DOTS = 64
 export const PPLA_GRAPHIC_PLACEHOLDER_HEIGHT_DOTS = 32
 
 /**
+ * Real PPLA resident fonts print as a tall, condensed dot-matrix face (thin strokes, narrow
+ * glyphs) — nothing like the generic `monospace` fallback, which renders noticeably rounder
+ * and wider on most systems. `Consolas`/`Courier New` are the closest condensed monospace
+ * faces commonly available cross-platform; `PPLA_TEXT_CONDENSE_FACTOR` narrows glyphs further
+ * (applied as a horizontal scale, independent of the element's own `widthMultiplier`) to get
+ * closer to the real printout's proportions.
+ */
+export const PPLA_TEXT_FONT_FAMILY = '"Consolas", "Courier New", monospace'
+export const PPLA_TEXT_CONDENSE_FACTOR = 0.8
+
+/**
  * `ooo` is NOT a pixel height for fonts 0-8, ':' (Courier), or ';' (font board) — A7/AD manual:
  * fonts 0-8 use a fixed `ooo` of '000' (confirmed by every A9/AB example in the manual), ':'
  * uses `ooo` as a symbol-set selector (000-007), and ';' uses `ooo` as the font's index in ROM

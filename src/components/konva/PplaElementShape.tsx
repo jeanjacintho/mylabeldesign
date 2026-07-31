@@ -2,7 +2,12 @@ import { useMemo } from 'react'
 import type Konva from 'konva'
 import { Group, Rect, Shape, Text } from 'react-konva'
 import type { AnyPplaElement } from '@/lib/ppla-model'
-import { getBaseFontHeightDots, getPplaElementLocalSizeDots } from '@/lib/ppla-layout'
+import {
+  getBaseFontHeightDots,
+  getPplaElementLocalSizeDots,
+  PPLA_TEXT_CONDENSE_FACTOR,
+  PPLA_TEXT_FONT_FAMILY,
+} from '@/lib/ppla-layout'
 import { dotsToStagePx, elementTopLeftStagePosition } from '@/lib/ppla-coords'
 
 export interface PplaElementShapeProps {
@@ -60,18 +65,20 @@ export function PplaElementShape({
   if (element.type === 'text') {
     const baseDots = getBaseFontHeightDots(element.fontId, element.subfont)
     const fontSizePx = dotsToStagePx(baseDots * Math.max(1, element.heightMultiplier), dpi, scale)
-    const mirrorScaleX = (element.mirror ? -1 : 1) * Math.max(1, element.widthMultiplier)
+    const mirrorScaleX =
+      (element.mirror ? -1 : 1) * Math.max(1, element.widthMultiplier) * PPLA_TEXT_CONDENSE_FACTOR
     return (
       <Text
         {...commonProps}
         text={element.text}
         fontSize={fontSizePx}
-        fontFamily="monospace"
+        fontFamily={PPLA_TEXT_FONT_FAMILY}
         fill={FILL}
-        width={widthPx}
-        height={heightPx}
+        // No `width`/`height`: those are only a rough estimate (`roughTextCellDots`), and
+        // Konva's Text still clips/aligns to a fixed width even with `wrap="none"` — an
+        // underestimate silently truncated real label text. Auto-sizing to the actual
+        // glyph metrics can never cut it off short.
         wrap="none"
-        verticalAlign="bottom"
         scaleX={mirrorScaleX}
         stroke={isSelected ? '#1971c2' : undefined}
         strokeWidth={isSelected ? 0.5 : 0}

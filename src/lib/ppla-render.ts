@@ -16,6 +16,8 @@ import {
   getBaseFontHeightDots,
   getPplaElementLocalSizeDots,
   getPplaElementVerticalExtentDots,
+  PPLA_TEXT_CONDENSE_FACTOR,
+  PPLA_TEXT_FONT_FAMILY,
 } from '@/lib/ppla-layout'
 
 export interface PplaRendererOptions {
@@ -123,10 +125,11 @@ export class PplaRendererService {
     this.applyRotation(ctx, element.rotation)
 
     ctx.textBaseline = 'bottom'
-    ctx.font = `${fontSizePx}px monospace`
+    ctx.font = `${fontSizePx}px ${PPLA_TEXT_FONT_FAMILY}`
 
     /** M (mirror): flips the field while keeping the anchor point (x,y) fixed — A6 guide */
-    const widthScale = Math.max(1, element.widthMultiplier) * (element.mirror ? -1 : 1)
+    const widthScale =
+      Math.max(1, element.widthMultiplier) * PPLA_TEXT_CONDENSE_FACTOR * (element.mirror ? -1 : 1)
     ctx.scale(widthScale, 1)
     ctx.textAlign = element.mirror ? 'right' : 'left'
     ctx.fillText(element.text, 0, heightPx)
