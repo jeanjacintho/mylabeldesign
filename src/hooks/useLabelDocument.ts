@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { AnyPplaElement, PplaElementKind } from '@/lib/ppla-model'
-import { parsePplaCode, parsePplaLabelPreamble } from '@/lib/ppla-parse-image'
+import { findPplaLabelBlocks, parsePplaCode, parsePplaLabelPreamble } from '@/lib/ppla-parse-image'
 import { estimateCoordinateDpiFromPplaCode, printStartOffsetDotsX, verticalPrintOffsetDotsY } from '@/lib/ppla-parse-preamble'
 import { emitPplaElementLine } from '@/lib/ppla-emit'
 import { createDefaultElement, insertElementLine, removeLineAt, replaceLineAt } from '@/lib/ppla-document'
@@ -28,6 +28,7 @@ export function useLabelDocument(initialCode: string, options: UseLabelDocumentO
   const [undoStack, setUndoStack] = useState<string[]>([])
   const [redoStack, setRedoStack] = useState<string[]>([])
   const [selectedIndex, setSelectedIndexState] = useState<number | null>(null)
+  const [selectedBlockIndexState, setSelectedBlockIndexState] = useState(0)
 
   const coordinateDpi = useMemo(
     () => estimateCoordinateDpiFromPplaCode(code) ?? fallbackPrinterDpi,
@@ -38,7 +39,56 @@ export function useLabelDocument(initialCode: string, options: UseLabelDocumentO
     () => parsePplaCode(code, { normalizeLineEndings: true, printerDpi: coordinateDpi }),
     [code, coordinateDpi],
   )
-  const { elements, label, diagnostics, elementSourceLines, elementFormatShifts } = parseResult
+  const { label, diagnostics } = parseResult
+
+  /**
+   * A pasted job printing a batch of labels (e.g. "ROLO: 1/7".."7/7") concatenates several
+   * full `L..E` blocks — showing/editing all of them at once overlays every copy on the
+   * same x/y grid. `labelBlocks` finds each block so the UI can show one at a time;
+   * `selectedBlockIndex` picks which. With 0 or 1 blocks, nothing is filtered (same
+   * behavior as before this existed).
+   */
+  const labelBlocks = useMemo(
+    () => findPplaLabelBlocks(code, true),
+    [code],
+  )
+  const selectedBlockIndex = Math.max(
+    0,
+    Math.min(selectedBlockIndexState, labelBlocks.length - 1),
+  )
+
+  const activeBlock = labelBlocks.length > 1 ? labelBlocks[selectedBlockIndex] : null
+
+  const { elements, elementSourceLines, elementFormatShifts } = useMemo(() => {
+    if (!activeBlock) {
+      return {
+        elements: parseResult.elements,
+        elementSourceLines: parseResult.elementSourceLines,
+        elementFormatShifts: parseResult.elementFormatShifts,
+      }
+    }
+    const filteredElements: AnyPplaElement[] = []
+    const filteredSourceLines: number[] = []
+    const filteredFormatShifts = [] as typeof parseResult.elementFormatShifts
+    parseResult.elementSourceLines.forEach((lineIndex, i) => {
+      if (lineIndex >= activeBlock.startLine && lineIndex <= activeBlock.endLine) {
+        filteredElements.push(parseResult.elements[i])
+        filteredSourceLines.push(lineIndex)
+        filteredFormatShifts.push(parseResult.elementFormatShifts[i])
+      }
+    })
+    return {
+      elements: filteredElements,
+      elementSourceLines: filteredSourceLines,
+      elementFormatShifts: filteredFormatShifts,
+    }
+  }, [activeBlock, parseResult])
+
+  /** Selects which label block (0-based) to show/edit; clamped to the available range. */
+  const setSelectedBlockIndex = useCallback((index: number) => {
+    setSelectedBlockIndexState(index)
+    setSelectedIndexState(null)
+  }, [])
 
   const globalShift = useMemo(() => {
     const preamble = parsePplaLabelPreamble(code)
@@ -136,10 +186,10 @@ export function useLabelDocument(initialCode: string, options: UseLabelDocumentO
     const rawElement = { ...draft, x: raw.x, y: raw.y }
     const newLine = emitPplaElementLine(rawElement)
 
-    const nextCode = insertElementLine(code, newLine)
+    const nextCode = insertElementLine(code, newLine, activeBlock?.endLine)
     commit(nextCode)
     setSelectedIndexState(elements.length)
-  }, [code, coordinateDpi, commit, elements.length, globalShift, label.formatLeftMarginHundredths, label.formatVerticalOffsetHundredths])
+  }, [activeBlock, code, coordinateDpi, commit, elements.length, globalShift, label.formatLeftMarginHundredths, label.formatVerticalOffsetHundredths])
 
   /** Removes one element's source line from the code and adjusts the selection accordingly. */
   const deleteElement = useCallback((index: number) => {
@@ -167,5 +217,10 @@ export function useLabelDocument(initialCode: string, options: UseLabelDocumentO
     redo,
     canUndo: undoStack.length > 0,
     canRedo: redoStack.length > 0,
+    /** How many `L..E` label blocks the pasted job has (1 for a normal single-label file). */
+    labelBlockCount: labelBlocks.length,
+    /** Which block (0-based) is currently shown/edited — only meaningful when `labelBlockCount > 1`. */
+    selectedBlockIndex,
+    setSelectedBlockIndex,
   }
 }

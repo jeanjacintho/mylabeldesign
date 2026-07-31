@@ -1,4 +1,4 @@
-import { Copy, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import {
@@ -104,6 +104,31 @@ function App() {
           onCreateElement={doc.addElement}
           onToolUsed={() => setActiveTool('select')}
         />
+        {doc.labelBlockCount > 1 && (
+          <div className="absolute left-1/2 top-2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border border-[#334155] bg-[#111827] px-2 py-1 text-[11px] text-[#cbd5e1] shadow-lg">
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded hover:bg-[#1e293b] disabled:opacity-30"
+              onClick={() => doc.setSelectedBlockIndex(doc.selectedBlockIndex - 1)}
+              disabled={doc.selectedBlockIndex <= 0}
+              aria-label="Etiqueta anterior"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span>
+              Etiqueta {doc.selectedBlockIndex + 1} de {doc.labelBlockCount}
+            </span>
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded hover:bg-[#1e293b] disabled:opacity-30"
+              onClick={() => doc.setSelectedBlockIndex(doc.selectedBlockIndex + 1)}
+              disabled={doc.selectedBlockIndex >= doc.labelBlockCount - 1}
+              aria-label="Próxima etiqueta"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
         <PropertiesPanel
           labelWidthMm={labelWidthMm}
           labelHeightMm={labelHeightMm}

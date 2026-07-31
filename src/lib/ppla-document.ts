@@ -72,14 +72,25 @@ export function createDefaultElement(
 }
 
 /**
- * Inserts a new element line inside the active label block — before the `Q`xxxx
- * (quantity) line if present, otherwise before the `E` that closes the block. If there's
- * no `L..E` block at all (empty file / no block), appends at the end.
- * Note: assumes a single `L..E` block per file (the same known limitation as the parser).
+ * Inserts a new element line inside a label block — before the `Q`xxxx (quantity) line
+ * if present, otherwise before the `E` that closes the block. If there's no `L..E` block
+ * at all (empty file / no block), appends at the end.
+ *
+ * `targetCloseLineIndex` picks which block's `E` to insert before, for jobs with more
+ * than one `L..E` block (e.g. a batch of "ROLO: 1/7".."7/7" labels) — pass the `endLine`
+ * of the block currently shown in the editor (`findPplaLabelBlocks`). Omit it (or pass a
+ * value that's no longer a real `E` line) to fall back to the first `E` in the file.
  */
-export function insertElementLine(code: string, newLine: string): string {
+export function insertElementLine(
+  code: string,
+  newLine: string,
+  targetCloseLineIndex?: number,
+): string {
   const lines = splitLines(code)
-  const closeIndex = lines.findIndex(l => l.trim() === 'E')
+  const closeIndex =
+    targetCloseLineIndex !== undefined && lines[targetCloseLineIndex]?.trim() === 'E'
+      ? targetCloseLineIndex
+      : lines.findIndex(l => l.trim() === 'E')
 
   if (closeIndex === -1) {
     lines.push(newLine)

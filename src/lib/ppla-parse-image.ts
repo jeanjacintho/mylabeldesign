@@ -763,6 +763,47 @@ export function splitPplaLines(
   return pplaCode.split(/\r\n|\r|\n/)
 }
 
+export interface PplaLabelBlockRange {
+  /** 0-based line index of the block's `L` line. */
+  startLine: number
+  /** 0-based line index of the block's matching `E` line. */
+  endLine: number
+}
+
+/**
+ * Finds every top-level `L..E` label block in a PPLA job (using the same `inLabel`
+ * toggling rule as `parsePplaCode`'s main loop). A pasted job printing N labels in a
+ * batch (e.g. "ROLO: 1/7".."7/7") typically concatenates N full `L..E` blocks — this
+ * lets the UI show/edit one block at a time instead of overlaying all of them.
+ */
+export function findPplaLabelBlocks(
+  pplaCode: string,
+  normalizeLineEndings?: boolean,
+): PplaLabelBlockRange[] {
+  const lines = splitPplaLines(pplaCode, normalizeLineEndings)
+  const blocks: PplaLabelBlockRange[] = []
+  let inLabel = false
+  let startLine = -1
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = stripPplaLineControls(lines[index])
+    if (!line) {
+      continue
+    }
+    if (line === 'L' && !inLabel) {
+      inLabel = true
+      startLine = index
+      continue
+    }
+    if (line === 'E' && inLabel) {
+      inLabel = false
+      blocks.push({ startLine, endLine: index })
+    }
+  }
+
+  return blocks
+}
+
 /** Convenience wrapper around `parsePplaCode` that returns only the parsed elements. */
 export function parsePplaElementsFromCode(
   pplaCode: string,
