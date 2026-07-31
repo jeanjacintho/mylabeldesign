@@ -12,12 +12,14 @@ import {
   stagePxToDots,
 } from '@/lib/ppla-coords'
 import { PplaElementShape } from '@/components/konva/PplaElementShape'
-import { cn } from '@/lib/utils'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type Konva from 'konva'
-import { Layer, Rect, Stage, Transformer } from 'react-konva'
+import { Layer, Rect, Stage, Text, Transformer } from 'react-konva'
 
 export type CanvasTool = 'select' | 'text' | 'box' | 'line'
+
+/** Margem em torno da etiqueta dentro da viewport, como fração do menor lado disponível. */
+const FIT_MARGIN_RATIO = 0.9
 
 interface CanvasProps {
   elements: AnyPplaElement[]
@@ -64,10 +66,51 @@ export function Canvas({
     [coordinateDpi, labelHeightMm, previewScreenScale],
   )
 
-  const [zoom] = useState(1)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 })
   const shapeNodes = useRef(new Map<number, Konva.Node>())
   const transformerRef = useRef<Konva.Transformer>(null)
   const selectedElement = selectedIndex !== null ? elements[selectedIndex] : undefined
+
+  useLayoutEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0]
+      if (!entry) return
+      setViewportSize({ width: entry.contentRect.width, height: entry.contentRect.height })
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  /**
+   * "Fit to frame": a etiqueta sempre ocupa o mesmo espaço fixo na tela (a viewport), e o
+   * zoom é recalculado pra ela caber inteira — menor que a viewport dá zoom in, maior dá
+   * zoom out. Escala nativa do Stage Konva (não CSS `transform`), então continua nítido em
+   * qualquer tamanho de etiqueta, ao contrário de esticar via CSS um bitmap já rasterizado.
+   */
+  const fitZoom = useMemo(() => {
+    if (labelWidthPx <= 0 || labelHeightPx <= 0 || viewportSize.width <= 1 || viewportSize.height <= 1) {
+      return 1
+    }
+    const scaleToFit = Math.min(
+      viewportSize.width / labelWidthPx,
+      viewportSize.height / labelHeightPx,
+    )
+    // Nunca amplia além do tamanho físico real (100%) — só reduz quando a etiqueta não
+    // cabe na viewport. Sem isso, em telas grandes a viewport é enorme e o fit ampliava a
+    // etiqueta pra preencher o espaço todo, ficando exageradamente grande.
+    return Math.min(scaleToFit * FIT_MARGIN_RATIO, 1)
+  }, [labelWidthPx, labelHeightPx, viewportSize])
+
+  const stagePos = useMemo(
+    () => ({
+      x: (viewportSize.width - labelWidthPx * fitZoom) / 2,
+      y: (viewportSize.height - labelHeightPx * fitZoom) / 2,
+    }),
+    [viewportSize, labelWidthPx, labelHeightPx, fitZoom],
+  )
 
   useEffect(() => {
     const transformer = transformerRef.current
@@ -94,7 +137,9 @@ export function Canvas({
     }
 
     const stage = e.target.getStage()
-    const pointer = stage?.getPointerPosition()
+    // Ponto relativo ao "mundo" da etiqueta (já descontando o fit/zoom do Stage), não o
+    // ponteiro cru na tela — o Stage tem seu próprio x/y/scale (auto-fit) agora.
+    const pointer = stage?.getRelativePointerPosition()
     if (!pointer) return
 
     const kind: PplaElementKind = activeTool
@@ -205,42 +250,47 @@ export function Canvas({
 
       {/* Canvas viewport */}
       <div
-        className="absolute inset-0 flex items-center justify-center"
+        ref={viewportRef}
+        className="absolute inset-0"
         style={{ top: '24px', left: '32px' }}
       >
-        <div className="relative" style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }}>
-          <div className="absolute -top-6 left-0 text-xs text-[#666] whitespace-nowrap">
-            Frame 1
-          </div>
-
-          <div
-            className="relative bg-[#f5f5f5] shadow-2xl"
-            style={{ width: labelWidthPx + 16, height: labelHeightPx + 16 }}
-          >
-            <div
-              className={cn(
-                'absolute border-2 bg-white',
-                selectedIndex !== null ? 'border-[#1971c2]' : 'border-[#ff6b6b]',
-              )}
-              style={{ left: 8, top: 8, width: labelWidthPx, height: labelHeightPx }}
-            >
-              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[#1971c2] text-white text-[10px] px-2 py-0.5 rounded whitespace-nowrap">
-                PPLA Preview
-              </div>
-
-              <Stage
-                width={Math.max(1, Math.floor(labelWidthPx))}
-                height={Math.max(1, Math.floor(labelHeightPx))}
-                onMouseDown={handleStageMouseDown}
-                onTouchStart={handleStageMouseDown}
-              >
-                <Layer>
-                  <Rect
-                    x={0} y={0}
-                    width={Math.max(1, Math.floor(labelWidthPx))}
-                    height={Math.max(1, Math.floor(labelHeightPx))}
-                    fill="#ffffff"
-                  />
+        <Stage
+          width={Math.max(1, Math.floor(viewportSize.width))}
+          height={Math.max(1, Math.floor(viewportSize.height))}
+          x={stagePos.x}
+          y={stagePos.y}
+          scaleX={fitZoom}
+          scaleY={fitZoom}
+          onMouseDown={handleStageMouseDown}
+          onTouchStart={handleStageMouseDown}
+        >
+          <Layer>
+            <Rect
+              x={-1} y={-1}
+              width={Math.max(1, Math.floor(labelWidthPx)) + 2}
+              height={Math.max(1, Math.floor(labelHeightPx)) + 2}
+              fill="none"
+              stroke={selectedIndex !== null ? '#1971c2' : '#ff6b6b'}
+              strokeWidth={2}
+              shadowColor="black"
+              shadowBlur={16}
+              shadowOpacity={0.4}
+            />
+            <Rect
+              x={0} y={0}
+              width={Math.max(1, Math.floor(labelWidthPx))}
+              height={Math.max(1, Math.floor(labelHeightPx))}
+              fill="#ffffff"
+            />
+            <Text
+              text="PPLA Preview"
+              x={0}
+              y={labelHeightPx + 10}
+              width={labelWidthPx}
+              align="center"
+              fontSize={11}
+              fill="#93c5fd"
+            />
                   {elements.map((element, index) => (
                     <PplaElementShape
                       key={index}
@@ -260,17 +310,14 @@ export function Canvas({
                       }}
                     />
                   ))}
-                  <Transformer
-                    ref={transformerRef}
-                    rotationSnaps={[0, 90, 180, 270]}
-                    resizeEnabled={selectedElement !== undefined && isResizable(selectedElement.type)}
-                    rotateEnabled
-                  />
-                </Layer>
-              </Stage>
-            </div>
-          </div>
-        </div>
+            <Transformer
+              ref={transformerRef}
+              rotationSnaps={[0, 90, 180, 270]}
+              resizeEnabled={selectedElement !== undefined && isResizable(selectedElement.type)}
+              rotateEnabled
+            />
+          </Layer>
+        </Stage>
       </div>
     </div>
   )
